@@ -18,13 +18,16 @@ programs:
         env:
             STARTED_BY: taskmaster
             ANSWER: 42
-    nginx2:
-        cmd: "/usr/local/bin/nginx -c /etc/nginx/test.conf"
+    test1:
+        cmd: "test1"
         autorestart: "always"
-    nginx3:
-        cmd: "/usr/local/bin/nginx -c /etc/nginx/test.conf"
+    test2:
+        cmd: "test2"
         autorestart: "never"
-    nginx4:
-        cmd: "/usr/local/bin/nginx -c /etc/nginx/test.conf"
+    test3:
+        cmd: "test3"
         autorestart: on-failure
+    test4:
+        cmd: "test4"
+        autorestart: jsp
 
