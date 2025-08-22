@@ -5,7 +5,7 @@ programs:
         umask: 022
         workingdir: /tmp
         autostart: true
-        autorestart: "false"
+        autorestart: always
         exitcodes:
             - 0
             - 2
@@ -18,5 +18,13 @@ programs:
         env:
             STARTED_BY: taskmaster
             ANSWER: 42
-    vogsphere:
-        cmd: "/usr/local/bin/vogsphere-worker --no-prefork"
+    nginx2:
+        cmd: "/usr/local/bin/nginx -c /etc/nginx/test.conf"
+        autorestart: "always"
+    nginx3:
+        cmd: "/usr/local/bin/nginx -c /etc/nginx/test.conf"
+        autorestart: "never"
+    nginx4:
+        cmd: "/usr/local/bin/nginx -c /etc/nginx/test.conf"
+        autorestart: on-failure
+
