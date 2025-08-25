@@ -29,6 +29,10 @@ func init() {
 }
 
 func main() {
+	// if euid := os.Geteuid(); euid != 0 {
+	// 	log.Fatal("Error: can't drop privileges as nonroot user")
+	// }
+
 	flag.Parse()
 
 	programs, err := config.Parse(ctx.configPath)

@@ -11,10 +11,11 @@ programs:
             - 2
         startretries: 3
         startsecs: 5
-        stopsignal: TERM
+        stopsignal: 34
         stopsecs: 10
         stdout_logfile: /tmp/nginx.stdout
         stderr_logfile: /tmp/nginx.stderr
+        user: jlefonde
         env:
             STARTED_BY: taskmaster
             ANSWER: 42
@@ -24,10 +25,12 @@ programs:
     test2:
         cmd: "test2"
         autorestart: "never"
+        stopsignal: INT
     test3:
         cmd: "test3"
         autorestart: on-failure
+        stopsignal: SIGINT
     test4:
         cmd: "test4"
-        autorestart: jsp
+        stopsignal: TERM
 

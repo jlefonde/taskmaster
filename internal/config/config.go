@@ -2,9 +2,12 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"reflect"
+	s "strings"
 	"syscall"
 
 	"github.com/mitchellh/mapstructure"
@@ -38,59 +41,186 @@ type Program struct {
 	Env           map[string]string `mapstructure:"env"`
 }
 
-func validateProgram(program Program) error {
-	if program.Cmd == "" {
-		return errors.New("cmd required")
+func checkBaseDirExists(path string) error {
+	if _, err := os.Stat(filepath.Dir(path)); err != nil {
+		return fmt.Errorf("the directory named as part of the path '%s' does not exist", path)
 	}
+
 	return nil
+}
+
+func checkDirExists(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("the path '%s' does not exist", path)
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("the path '%s' is not a directory", path)
+	}
+
+	return nil
+}
+
+func validateProgram(programName string, program Program) error {
+	if program.Cmd == "" {
+		return errors.New("'cmd' required")
+	}
+
+	if program.NumProcs > 1 && !s.Contains(programName, "%(process_num)") {
+		return errors.New("%(process_num) must be present within program_name when numprocs > 1")
+	}
+
+	if program.AutoRestart == AUTORESTART_UNKNOWN {
+		return errors.New("invalid 'autorestart'")
+	}
+
+	if program.StopSignal < 0 || program.StopSignal > 34 {
+		return errors.New("invalid 'stopsignal'")
+	}
+
+	for _, val := range program.ExitCodes {
+		if val < 0 || val > 255 {
+			return errors.New("invalid 'exitcodes'")
+		}
+	}
+
+	if _, err := user.Lookup(program.User); err != nil {
+		return errors.New("invalid 'user'")
+	}
+
+	if err := checkDirExists(program.WorkingDir); err != nil {
+		return err
+	}
+
+	if err := checkBaseDirExists(program.StdoutLogfile); err != nil {
+		return err
+	}
+
+	if err := checkBaseDirExists(program.StderrLogfile); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func parseAutoRestart(programMap map[string]any, program *Program) {
+	autoRestart, autoRestartFound := programMap["autorestart"]
+	if !autoRestartFound {
+		return
+	}
+
+	program.AutoRestart = AUTORESTART_UNKNOWN
+
+	autoRestartStr, ok := autoRestart.(string)
+	if !ok {
+		return
+	}
+
+	autoRestartMap := map[string]AutoRestart{
+		"never":      AUTORESTART_NEVER,
+		"always":     AUTORESTART_ALWAYS,
+		"on-failure": AUTORESTART_ON_FAILURE,
+	}
+
+	if val, found := autoRestartMap[autoRestartStr]; found {
+		program.AutoRestart = val
+	}
+
+	delete(programMap, "autorestart")
+}
+
+func parseStopSignal(programMap map[string]any, program *Program) {
+	stopSignal, stopSignalFound := programMap["stopsignal"]
+	if !stopSignalFound {
+		return
+	}
+
+	stopSignalStr, ok := stopSignal.(string)
+	if !ok {
+		return
+	}
+
+	signalMap := map[string]syscall.Signal{
+		"ABRT":   syscall.SIGABRT,
+		"ALRM":   syscall.SIGALRM,
+		"BUS":    syscall.SIGBUS,
+		"CHLD":   syscall.SIGCHLD,
+		"CLD":    syscall.SIGCLD,
+		"CONT":   syscall.SIGCONT,
+		"FPE":    syscall.SIGFPE,
+		"HUP":    syscall.SIGHUP,
+		"ILL":    syscall.SIGILL,
+		"INT":    syscall.SIGINT,
+		"IO":     syscall.SIGIO,
+		"IOT":    syscall.SIGIOT,
+		"KILL":   syscall.SIGKILL,
+		"PIPE":   syscall.SIGPIPE,
+		"POLL":   syscall.SIGPOLL,
+		"PROF":   syscall.SIGPROF,
+		"PWR":    syscall.SIGPWR,
+		"QUIT":   syscall.SIGQUIT,
+		"SEGV":   syscall.SIGSEGV,
+		"STKFLT": syscall.SIGSTKFLT,
+		"STOP":   syscall.SIGSTOP,
+		"SYS":    syscall.SIGSYS,
+		"TERM":   syscall.SIGTERM,
+		"TRAP":   syscall.SIGTRAP,
+		"TSTP":   syscall.SIGTSTP,
+		"TTIN":   syscall.SIGTTIN,
+		"TTOU":   syscall.SIGTTOU,
+		"UNUSED": syscall.SIGUNUSED,
+		"URG":    syscall.SIGURG,
+		"USR1":   syscall.SIGUSR1,
+		"USR2":   syscall.SIGUSR2,
+		"VTALRM": syscall.SIGVTALRM,
+		"WINCH":  syscall.SIGWINCH,
+		"XCPU":   syscall.SIGXCPU,
+		"XFSZ":   syscall.SIGXFSZ,
+	}
+
+	stopSignalStr = s.ToUpper(stopSignalStr)
+	stopSignalStr, _ = s.CutPrefix(stopSignalStr, "SIG")
+
+	if sig, found := signalMap[stopSignalStr]; found {
+		program.StopSignal = sig
+	} else {
+		program.StopSignal = -1
+	}
+
+	delete(programMap, "stopsignal")
 }
 
 func defaultsHook() mapstructure.DecodeHookFunc {
 	return func(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
-		// fmt.Printf("f: %+v, t: %+v, data: %+v\n", f, t, data)
 		if t == reflect.TypeOf(Program{}) {
 			program := Program{
-				NumProcs:      1,
-				AutoStart:     true,
-				AutoRestart:   AUTORESTART_ON_FAILURE,
-				ExitCodes:     []int{0},
-				StartRetries:  3,
-				StartSecs:     1,
-				StopSignal:    15,
-				StopSecs:      10,
-				StdoutLogfile: "/tmp/stdout.log",
-				StderrLogfile: "/tmp/stderr.log",
-				Env:           make(map[string]string),
+				NumProcs:     1,
+				WorkingDir:   "/",
+				User:         "root",
+				AutoStart:    true,
+				AutoRestart:  AUTORESTART_ON_FAILURE,
+				ExitCodes:    []int{0},
+				StartRetries: 3,
+				StartSecs:    1,
+				StopSignal:   15,
+				StopSecs:     10,
+				Env:          make(map[string]string),
 			}
 
 			programMap := data.(map[string]any)
-
-			autoRestart, autoRestartFound := programMap["autorestart"]
-			if autoRestartFound {
-				autoRestartStr, ok := autoRestart.(string)
-				if !ok {
-					program.AutoRestart = AUTORESTART_UNKNOWN
-				} else {
-					switch autoRestartStr {
-					case "never":
-						program.AutoRestart = AUTORESTART_NEVER
-					case "always":
-						program.AutoRestart = AUTORESTART_ALWAYS
-					case "on-failure":
-						program.AutoRestart = AUTORESTART_ON_FAILURE
-					default:
-						program.AutoRestart = AUTORESTART_UNKNOWN
-					}
-				}
-				delete(programMap, "autorestart")
-			}
+			parseAutoRestart(programMap, &program)
+			parseStopSignal(programMap, &program)
 
 			decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 				WeaklyTypedInput: true,
 				Result:           &program,
 			})
 
-			decoder.Decode(programMap)
+			if err := decoder.Decode(programMap); err != nil {
+				return nil, err
+			}
+
 			return program, nil
 		}
 		return data, nil
@@ -134,7 +264,9 @@ func readConfigFile(configPath string) ([]byte, error) {
 		}
 
 		if conf == nil {
-			return nil, errors.New("no configuration file found in default locations")
+			defaultLocationsStr := "(" + s.Join(defaultLocations, ", ") + ")"
+			errorMsg := s.Join([]string{"no configuration file found at default locations", defaultLocationsStr}, " ")
+			return nil, errors.New(errorMsg)
 		}
 
 		return conf, nil
@@ -166,7 +298,7 @@ func Parse(configPath string) (map[string]Program, error) {
 
 	rawPrograms, programsFound := configMap["programs"]
 	if !programsFound {
-		return nil, errors.New("no 'programs' section found in configuration")
+		return nil, errors.New("no 'programs' section found in configuration file")
 	}
 
 	var programs map[string]Program
@@ -176,10 +308,10 @@ func Parse(configPath string) (map[string]Program, error) {
 		return nil, err
 	}
 
-	for _, program := range programs {
-		err := validateProgram(program)
+	for programName, program := range programs {
+		err := validateProgram(programName, program)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w in section 'programs:%s' (file: '%s')", err, programName, configPath)
 		}
 	}
 
