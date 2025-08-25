@@ -49,9 +49,7 @@ func main() {
 	for _, program := range programs {
 		fmt.Printf("%+v\n", program)
 
-		parts := s.Fields(program.Cmd)
-
-		cmd := exec.Command(parts[0], parts[1:]...)
+		cmd := exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", program.Umask, program.Cmd))
 		cmd.Env = os.Environ()
 
 		for envKey, envVal := range program.Env {
