@@ -42,6 +42,10 @@ type Program struct {
 }
 
 func checkBaseDirExists(path string) error {
+	if path == "" {
+		return nil
+	}
+
 	if _, err := os.Stat(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("the directory named as part of the path '%s' does not exist", path)
 	}
@@ -50,6 +54,10 @@ func checkBaseDirExists(path string) error {
 }
 
 func checkDirExists(path string) error {
+	if path == "" {
+		return nil
+	}
+
 	info, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("the path '%s' does not exist", path)
@@ -196,8 +204,8 @@ func defaultsHook() mapstructure.DecodeHookFunc {
 		if t == reflect.TypeOf(Program{}) {
 			program := Program{
 				NumProcs:     1,
-				WorkingDir:   "/",
 				User:         "root",
+				Umask:        -1,
 				AutoStart:    true,
 				AutoRestart:  AUTORESTART_ON_FAILURE,
 				ExitCodes:    []int{0},
