@@ -1,9 +1,9 @@
-# taskmasterd:
-#     nodaemon: true
-#     nocleanup: false
-#     childlogdir: /var/log/
-#     logfile: /var/log/taskmasterd.log
-#     loglevel: info
+taskmasterd:
+    nodaemon: true
+    nocleanup: false
+    childlogdir: /var/log/
+    logfile: /var/log/taskmasterd.log
+    loglevel: info
 programs:
     test:
         cmd: echo "Hello, World!"

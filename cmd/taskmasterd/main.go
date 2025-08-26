@@ -43,5 +43,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	supervisor.Run(config)
+	if err := supervisor.Run(config); err != nil {
+		fmt.Fprintln(os.Stderr, "Error: failed to run supervisor:", err)
+		os.Exit(1)
+	}
 }

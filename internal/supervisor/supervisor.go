@@ -75,19 +75,21 @@ func cleanupLogFiles() error {
 	return nil
 }
 
-func Run(config *config.Config) {
+func Run(config *config.Config) error {
 	log, err := logger.CreateLogger("/var/log/taskmasterd.log", logger.ERROR)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error: couldn't create logger:", err)
-		os.Exit(1)
+		return fmt.Errorf("couldn't create logger: %w", err)
 	}
 
-	if err := cleanupLogFiles(); err != nil {
-		log.Warning("couldn't cleanup log files:", err)
+	if !config.Taskmasterd.NoCleanup {
+		if err := cleanupLogFiles(); err != nil {
+			log.Warning("couldn't cleanup log files:", err)
+		}
 	}
 
+	fmt.Printf("taskmaster: %+v\n\n", config.Taskmasterd)
 	for programName, program := range config.Programs {
-		fmt.Printf("%+v\n", program)
+		fmt.Printf("%s: %+v\n", programName, program)
 
 		cmd := exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", program.Umask, program.Cmd))
 		cmd.Env = os.Environ()
@@ -113,7 +115,7 @@ func Run(config *config.Config) {
 		cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
 		for i := range program.NumProcs {
 			if err := setLogFiles(programName, program, i, cmd); err != nil {
-				log.Warningf("couldn't set LogFile for program '%s' (process %d): %v", programName, i, err)
+				log.Warningf("couldn't set logfile for program '%s' (process %d): %v", programName, i, err)
 				continue
 			}
 
@@ -121,5 +123,9 @@ func Run(config *config.Config) {
 				log.Warning("running process failed:", err)
 			}
 		}
+
+		fmt.Println("")
 	}
+
+	return nil
 }

@@ -226,6 +226,16 @@ func parseStopSignal(programMap map[string]any, program *Program) {
 	delete(programMap, "stopsignal")
 }
 
+func taskmasterdHook() mapstructure.DecodeHookFunc {
+	return func(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+		fmt.Printf("f: %+v, t: %+v, data: %+v\n", f, t, data)
+		if t == reflect.TypeOf(Taskmasterd{}) {
+
+		}
+		return data, nil
+	}
+}
+
 func programsHook() mapstructure.DecodeHookFunc {
 	return func(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
 		if t == reflect.TypeOf(Program{}) {
@@ -258,6 +268,7 @@ func programsHook() mapstructure.DecodeHookFunc {
 
 			return program, nil
 		}
+
 		return data, nil
 	}
 }
@@ -298,7 +309,7 @@ func readConfigFile(configPath string) ([]byte, error) {
 			break
 		}
 
-		if conf == nil {
+		if len(conf) == 0 {
 			defaultLocationsStr := "(" + s.Join(defaultLocations, ", ") + ")"
 			return nil, fmt.Errorf("no configuration file found at default locations %s", defaultLocationsStr)
 		}
@@ -345,6 +356,10 @@ func decodeRawMap(configMap map[string]any, key string, result any, decodeHook m
 func parseTaskmasterd(configMap map[string]any, config *Config) error {
 	if err := setDefaultTaskmasterd(config); err != nil {
 		return fmt.Errorf("couldn't set default taskmasterd: %w", err)
+	}
+
+	if err := decodeRawMap(configMap, "taskmasterd", &config.Taskmasterd, taskmasterdHook()); err != nil {
+		return err
 	}
 
 	if err := validateTaskmasterd(config.Taskmasterd); err != nil {
