@@ -70,13 +70,9 @@ func checkDirExists(path string) error {
 	return nil
 }
 
-func validateProgram(programName string, program Program) error {
+func validateProgram(program Program) error {
 	if program.Cmd == "" {
 		return errors.New("'cmd' required")
-	}
-
-	if program.NumProcs > 1 && !s.Contains(programName, "%(process_num)") {
-		return errors.New("%(process_num) must be present within program_name when numprocs > 1")
 	}
 
 	if program.AutoRestart == AUTORESTART_UNKNOWN {
@@ -273,8 +269,7 @@ func readConfigFile(configPath string) ([]byte, error) {
 
 		if conf == nil {
 			defaultLocationsStr := "(" + s.Join(defaultLocations, ", ") + ")"
-			errorMsg := s.Join([]string{"no configuration file found at default locations", defaultLocationsStr}, " ")
-			return nil, errors.New(errorMsg)
+			return nil, fmt.Errorf("no configuration file found at default locations %s", defaultLocationsStr)
 		}
 
 		return conf, nil
@@ -317,7 +312,7 @@ func Parse(configPath string) (map[string]Program, error) {
 	}
 
 	for programName, program := range programs {
-		err := validateProgram(programName, program)
+		err := validateProgram(program)
 		if err != nil {
 			return nil, fmt.Errorf("%w in section 'programs:%s' (file: '%s')", err, programName, configPath)
 		}
