@@ -15,9 +15,9 @@ import (
 	"taskmaster/internal/logger"
 )
 
-func getLogfile(logfile string, programName string, outFile string, processNum int, numProcs int) string {
-	if logfile != "" {
-		return logfile
+func getLogFile(LogFile string, programName string, outFile string, processNum int, numProcs int) string {
+	if LogFile != "" {
+		return LogFile
 	}
 
 	const charset string = "abcdefghijklmnopqrstuvwxyz0123456789"
@@ -38,14 +38,14 @@ func getLogfile(logfile string, programName string, outFile string, processNum i
 }
 
 func setLogFiles(programName string, program config.Program, processNum int, cmd *exec.Cmd) error {
-	stdoutLogfile := getLogfile(program.StdoutLogfile, programName, "stdout", processNum, program.NumProcs)
-	stdout, err := os.OpenFile(stdoutLogfile, os.O_CREATE|os.O_RDWR, 0644)
+	stdoutLogFile := getLogFile(program.StdoutLogFile, programName, "stdout", processNum, program.NumProcs)
+	stdout, err := os.OpenFile(stdoutLogFile, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return fmt.Errorf("open stdout failed: %w", err)
 	}
 
-	stderrLogfile := getLogfile(program.StderrLogfile, programName, "stderr", processNum, program.NumProcs)
-	stderr, err := os.OpenFile(stderrLogfile, os.O_CREATE|os.O_RDWR, 0644)
+	stderrLogFile := getLogFile(program.StderrLogFile, programName, "stderr", processNum, program.NumProcs)
+	stderr, err := os.OpenFile(stderrLogFile, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return fmt.Errorf("open stderr failed: %w", err)
 	}
@@ -75,7 +75,7 @@ func cleanupLogFiles() error {
 	return nil
 }
 
-func Run(programs map[string]config.Program) {
+func Run(config *config.Config) {
 	log, err := logger.CreateLogger("/var/log/taskmasterd.log", logger.ERROR)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: couldn't create logger:", err)
@@ -86,7 +86,7 @@ func Run(programs map[string]config.Program) {
 		log.Warning("couldn't cleanup log files:", err)
 	}
 
-	for programName, program := range programs {
+	for programName, program := range config.Programs {
 		fmt.Printf("%+v\n", program)
 
 		cmd := exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", program.Umask, program.Cmd))
@@ -113,7 +113,7 @@ func Run(programs map[string]config.Program) {
 		cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
 		for i := range program.NumProcs {
 			if err := setLogFiles(programName, program, i, cmd); err != nil {
-				log.Warningf("couldn't set logfile for program '%s' (process %d): %v", programName, i, err)
+				log.Warningf("couldn't set LogFile for program '%s' (process %d): %v", programName, i, err)
 				continue
 			}
 

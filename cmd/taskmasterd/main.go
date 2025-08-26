@@ -37,11 +37,11 @@ func main() {
 
 	flag.Parse()
 
-	programs, err := config.Parse(ctx.configPath)
+	config, err := config.Parse(ctx.configPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: failed to parse configuration file:", err)
 		os.Exit(1)
 	}
 
-	supervisor.Run(programs)
+	supervisor.Run(config)
 }

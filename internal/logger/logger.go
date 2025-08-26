@@ -14,6 +14,7 @@ const (
 	WARNING LogLevel = "WARNING "
 	INFO    LogLevel = "INFO    "
 	DEBUG   LogLevel = "DEBUG   "
+	UNKNOWN LogLevel = ""
 )
 
 type Logger struct {
@@ -21,13 +22,13 @@ type Logger struct {
 	level  LogLevel
 }
 
-func CreateLogger(logfilePath string, logLevel LogLevel) (*Logger, error) {
-	logfile, err := os.OpenFile(logfilePath, os.O_CREATE|os.O_RDWR, 0644)
+func CreateLogger(LogFilePath string, logLevel LogLevel) (*Logger, error) {
+	LogFile, err := os.OpenFile(LogFilePath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("open logfile failed: %w", err)
+		return nil, fmt.Errorf("open LogFile failed: %w", err)
 	}
 
-	return &Logger{log.New(logfile, "", log.Lmsgprefix|log.Ldate|log.Ltime), logLevel}, nil
+	return &Logger{log.New(LogFile, "", log.Lmsgprefix|log.Ldate|log.Ltime), logLevel}, nil
 }
 
 func (l *Logger) Fatalf(format string, v ...interface{}) {

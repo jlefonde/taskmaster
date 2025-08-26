@@ -9,6 +9,7 @@ import (
 	"reflect"
 	s "strings"
 	"syscall"
+	"taskmaster/internal/logger"
 
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"
@@ -23,6 +24,14 @@ const (
 	AUTORESTART_UNKNOWN    AutoRestart = "unknown"
 )
 
+type Taskmasterd struct {
+	NoDaemon    bool            `mapstructure:"nodaemon"`
+	NoCleanup   bool            `mapstructure:"nocleanup"`
+	ChildLogDir string          `mapstructure:"childlogdir"`
+	LogFile     string          `mapstructure:"logfile"`
+	LogLevel    logger.LogLevel `mapstructure:"loglevel"`
+}
+
 type Program struct {
 	Cmd           string            `mapstructure:"cmd"`
 	NumProcs      int               `mapstructure:"numprocs"`
@@ -36,9 +45,15 @@ type Program struct {
 	StartSecs     int               `mapstructure:"startsecs"`
 	StopSignal    syscall.Signal    `mapstructure:"stopsignal"`
 	StopSecs      int               `mapstructure:"stopsecs"`
-	StdoutLogfile string            `mapstructure:"stdout_logfile"`
-	StderrLogfile string            `mapstructure:"stderr_logfile"`
+	StdoutLogFile string            `mapstructure:"stdout_logfile"`
+	StderrLogFile string            `mapstructure:"stderr_logfile"`
 	Env           map[string]string `mapstructure:"env"`
+}
+
+type Config struct {
+	Path        string
+	Taskmasterd Taskmasterd
+	Programs    map[string]Program
 }
 
 func checkBaseDirExists(path string) error {
@@ -65,6 +80,22 @@ func checkDirExists(path string) error {
 
 	if !info.IsDir() {
 		return fmt.Errorf("the path '%s' is not a directory", path)
+	}
+
+	return nil
+}
+
+func validateTaskmasterd(taskmasterd Taskmasterd) error {
+	if err := checkDirExists(taskmasterd.ChildLogDir); err != nil {
+		return err
+	}
+
+	if err := checkBaseDirExists(taskmasterd.LogFile); err != nil {
+		return err
+	}
+
+	if taskmasterd.LogLevel == logger.UNKNOWN {
+		return errors.New("invalid 'loglevel'")
 	}
 
 	return nil
@@ -97,11 +128,11 @@ func validateProgram(program Program) error {
 		return err
 	}
 
-	if err := checkBaseDirExists(program.StdoutLogfile); err != nil {
+	if err := checkBaseDirExists(program.StdoutLogFile); err != nil {
 		return err
 	}
 
-	if err := checkBaseDirExists(program.StderrLogfile); err != nil {
+	if err := checkBaseDirExists(program.StderrLogFile); err != nil {
 		return err
 	}
 
@@ -195,7 +226,7 @@ func parseStopSignal(programMap map[string]any, program *Program) {
 	delete(programMap, "stopsignal")
 }
 
-func defaultsHook() mapstructure.DecodeHookFunc {
+func programsHook() mapstructure.DecodeHookFunc {
 	return func(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
 		if t == reflect.TypeOf(Program{}) {
 			program := Program{
@@ -283,8 +314,66 @@ func readConfigFile(configPath string) ([]byte, error) {
 	return conf, nil
 }
 
-func Parse(configPath string) (map[string]Program, error) {
-	conf, err := readConfigFile(configPath)
+func setDefaultTaskmasterd(config *Config) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	config.Taskmasterd.NoDaemon = true // TODO: set to false when daemon bonus implemented
+	config.Taskmasterd.NoCleanup = false
+	config.Taskmasterd.ChildLogDir = os.TempDir()
+	config.Taskmasterd.LogFile = cwd + "/taskmasterd.log"
+	config.Taskmasterd.LogLevel = logger.ERROR // TODO: set to INFO
+
+	return nil
+}
+
+func decodeRawMap(configMap map[string]any, key string, result any, decodeHook mapstructure.DecodeHookFunc) error {
+	raw, found := configMap[key]
+	if found {
+		decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+			Result: result, WeaklyTypedInput: true, DecodeHook: decodeHook})
+		if err := decoder.Decode(raw); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func parseTaskmasterd(configMap map[string]any, config *Config) error {
+	if err := setDefaultTaskmasterd(config); err != nil {
+		return fmt.Errorf("couldn't set default taskmasterd: %w", err)
+	}
+
+	if err := validateTaskmasterd(config.Taskmasterd); err != nil {
+		return fmt.Errorf("%w in section 'taskmasterd' (file: '%s')", err, config.Path)
+	}
+
+	return nil
+}
+
+func parsePrograms(configMap map[string]any, config *Config) error {
+	if err := decodeRawMap(configMap, "programs", &config.Programs, programsHook()); err != nil {
+		return err
+	}
+
+	for programName, program := range config.Programs {
+		err := validateProgram(program)
+		if err != nil {
+			return fmt.Errorf("%w in section 'programs:%s' (file: '%s')", err, programName, config.Path)
+		}
+	}
+
+	return nil
+}
+
+func Parse(configPath string) (*Config, error) {
+	var config Config
+	config.Path = configPath
+
+	conf, err := readConfigFile(config.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -299,24 +388,13 @@ func Parse(configPath string) (map[string]Program, error) {
 		return nil, errors.New("configuration file is not a valid YAML")
 	}
 
-	rawPrograms, programsFound := configMap["programs"]
-	if !programsFound {
-		return nil, errors.New("no 'programs' section found in configuration file")
-	}
-
-	var programs map[string]Program
-	decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Result: &programs, WeaklyTypedInput: true, DecodeHook: defaultsHook()})
-	if err := decoder.Decode(rawPrograms); err != nil {
+	if err := parseTaskmasterd(configMap, &config); err != nil {
 		return nil, err
 	}
 
-	for programName, program := range programs {
-		err := validateProgram(program)
-		if err != nil {
-			return nil, fmt.Errorf("%w in section 'programs:%s' (file: '%s')", err, programName, configPath)
-		}
+	if err := parsePrograms(configMap, &config); err != nil {
+		return nil, err
 	}
 
-	return programs, nil
+	return &config, nil
 }
