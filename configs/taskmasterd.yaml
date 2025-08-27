@@ -22,8 +22,4 @@ programs:
         env:
             STARTED_BY: taskmaster
             ANSWER: 42
-        stderr_logfile: none
-    test2:
-        cmd: "cat"
         stdout_logfile: none
-        stderr_logfile: auto
