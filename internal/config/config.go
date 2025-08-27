@@ -15,6 +15,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type Context struct {
+	ConfigPath  string
+	NoDaemon    bool
+	NoCleanup   bool
+	ChildLogDir string
+	LogFile     string
+	LogLevel    string
+}
+
 type AutoRestart string
 
 const (
@@ -68,6 +77,31 @@ func checkBaseDirExists(path string) error {
 	return nil
 }
 
+func checkFilePath(path string) error {
+	if path == "" {
+		return nil
+	}
+
+	if err := checkBaseDirExists(path); err != nil {
+		return err
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return err
+	}
+
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("the path '%s' exists but is not a regular file", path)
+	}
+
+	return nil
+}
+
 func checkDirExists(path string) error {
 	if path == "" {
 		return nil
@@ -90,7 +124,7 @@ func validateTaskmasterd(taskmasterd Taskmasterd) error {
 		return err
 	}
 
-	if err := checkBaseDirExists(taskmasterd.LogFile); err != nil {
+	if err := checkFilePath(taskmasterd.LogFile); err != nil {
 		return err
 	}
 
@@ -128,30 +162,18 @@ func validateProgram(program Program) error {
 		return err
 	}
 
-	if err := checkBaseDirExists(program.StdoutLogFile); err != nil {
+	if err := checkFilePath(program.StdoutLogFile); err != nil {
 		return err
 	}
 
-	if err := checkBaseDirExists(program.StderrLogFile); err != nil {
+	if err := checkFilePath(program.StderrLogFile); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func parseLogLevel(taskmasterdMap map[string]any, taskmasterd *Taskmasterd) {
-	logLevel, logLevelFound := taskmasterdMap["loglevel"]
-	if !logLevelFound {
-		return
-	}
-
-	taskmasterd.LogLevel = logger.UNKNOWN
-
-	logLevelStr, ok := logLevel.(string)
-	if !ok {
-		return
-	}
-
+func getLogLevelFromStr(logLevelStr string) (logger.LogLevel, error) {
 	logLevelMap := map[string]logger.LogLevel{
 		"fatal":   logger.FATAL,
 		"error":   logger.ERROR,
@@ -161,8 +183,24 @@ func parseLogLevel(taskmasterdMap map[string]any, taskmasterd *Taskmasterd) {
 	}
 
 	if val, found := logLevelMap[s.ToLower(logLevelStr)]; found {
-		taskmasterd.LogLevel = val
+		return val, nil
 	}
+
+	return logger.UNKNOWN, errors.New("invalid 'loglevel'")
+}
+
+func parseLogLevel(taskmasterdMap map[string]any, taskmasterd *Taskmasterd) {
+	logLevel, logLevelFound := taskmasterdMap["loglevel"]
+	if !logLevelFound {
+		return
+	}
+
+	logLevelStr, ok := logLevel.(string)
+	if !ok {
+		return
+	}
+
+	taskmasterd.LogLevel, _ = getLogLevelFromStr(logLevelStr)
 
 	delete(taskmasterdMap, "loglevel")
 }
@@ -426,32 +464,94 @@ func parsePrograms(configMap map[string]any, config *Config) error {
 	return nil
 }
 
-func Parse(configPath string) (*Config, error) {
-	var config Config
-	config.Path = configPath
+func taskmasterdFromContext(ctx *Context) (*Taskmasterd, error) {
+	taskmasterd := Taskmasterd{
+		NoDaemon:    ctx.NoDaemon,
+		NoCleanup:   ctx.NoCleanup,
+		ChildLogDir: ctx.ChildLogDir,
+		LogFile:     ctx.LogFile,
+		LogLevel:    logger.NONE,
+	}
 
+	if ctx.LogLevel != "" {
+		logLevel, err := getLogLevelFromStr(ctx.LogLevel)
+		if err != nil {
+			return nil, err
+		}
+
+		taskmasterd.LogLevel = logLevel
+	}
+
+	if err := validateTaskmasterd(taskmasterd); err != nil {
+		return nil, err
+	}
+
+	return &taskmasterd, nil
+}
+
+func overrideTaskmasterd(base *Taskmasterd, override *Taskmasterd) {
+	if override.NoDaemon {
+		base.NoDaemon = override.NoDaemon
+	}
+
+	if override.NoCleanup {
+		base.NoCleanup = override.NoCleanup
+	}
+
+	if override.ChildLogDir != "" {
+		base.ChildLogDir = override.ChildLogDir
+	}
+
+	if override.LogFile != "" {
+		base.LogFile = override.LogFile
+	}
+
+	if override.LogLevel != logger.NONE {
+		base.LogLevel = override.LogLevel
+	}
+}
+
+func parseConfig(config *Config) error {
 	conf, err := readConfigFile(config.Path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	var raw any
 	if err := yaml.Unmarshal(conf, &raw); err != nil {
-		return nil, err
+		return err
 	}
 
 	configMap, ok := raw.(map[string]any)
 	if !ok {
-		return nil, errors.New("configuration file is not a valid YAML")
+		return errors.New("configuration file is not a valid YAML")
 	}
 
-	if err := parseTaskmasterd(configMap, &config); err != nil {
-		return nil, err
+	if err := parseTaskmasterd(configMap, config); err != nil {
+		return err
 	}
 
-	if err := parsePrograms(configMap, &config); err != nil {
-		return nil, err
+	if err := parsePrograms(configMap, config); err != nil {
+		return err
 	}
+
+	return nil
+}
+
+func Parse(ctx *Context) (*Config, error) {
+	var config Config
+	config.Path = ctx.ConfigPath
+
+	taskmasterd, err := taskmasterdFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse configuration flags: %w", err)
+	}
+
+	if err := parseConfig(&config); err != nil {
+		return nil, fmt.Errorf("failed to parse configuration file: %w", err)
+	}
+
+	overrideTaskmasterd(&config.Taskmasterd, taskmasterd)
 
 	return &config, nil
 }

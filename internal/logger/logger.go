@@ -15,6 +15,7 @@ const (
 	INFO    LogLevel = iota
 	DEBUG   LogLevel = iota
 	UNKNOWN LogLevel = iota
+	NONE    LogLevel = iota
 )
 
 type Logger struct {
