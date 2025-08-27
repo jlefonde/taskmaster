@@ -1,9 +1,9 @@
 taskmasterd:
     nodaemon: true
     nocleanup: false
-    childlogdir: /var/log/
+    childlogdir: ./
     logfile: /var/log/taskmasterd.log
-    loglevel: info
+    loglevel: error
 programs:
     test:
         cmd: echo "Hello, World!"
@@ -22,5 +22,8 @@ programs:
         env:
             STARTED_BY: taskmaster
             ANSWER: 42
+        stderr_logfile: none
     test2:
         cmd: "cat"
+        stdout_logfile: none
+        stderr_logfile: auto

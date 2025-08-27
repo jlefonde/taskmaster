@@ -32,6 +32,7 @@ func CreateLogger(LogFilePath string, logLevel LogLevel) (*Logger, error) {
 }
 
 func (l *Logger) Fatalf(format string, v ...interface{}) {
+	// TODO: add loglevel check
 	l.logger.Fatalf(string(FATAL)+format, v...)
 }
 

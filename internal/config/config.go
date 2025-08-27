@@ -35,7 +35,7 @@ type Taskmasterd struct {
 type Program struct {
 	Cmd           string            `mapstructure:"cmd"`
 	NumProcs      int               `mapstructure:"numprocs"`
-	Umask         int               `mapstructure:"umask"`
+	Umask         *int              `mapstructure:"umask"`
 	WorkingDir    string            `mapstructure:"workingdir"`
 	User          string            `mapstructure:"user"`
 	AutoStart     bool              `mapstructure:"autostart"`
@@ -139,6 +139,34 @@ func validateProgram(program Program) error {
 	return nil
 }
 
+func parseLogLevel(taskmasterdMap map[string]any, taskmasterd *Taskmasterd) {
+	logLevel, logLevelFound := taskmasterdMap["loglevel"]
+	if !logLevelFound {
+		return
+	}
+
+	taskmasterd.LogLevel = logger.UNKNOWN
+
+	logLevelStr, ok := logLevel.(string)
+	if !ok {
+		return
+	}
+
+	logLevelMap := map[string]logger.LogLevel{
+		"fatal":   logger.FATAL,
+		"error":   logger.ERROR,
+		"warning": logger.WARNING,
+		"info":    logger.INFO,
+		"debug":   logger.DEBUG,
+	}
+
+	if val, found := logLevelMap[s.ToLower(logLevelStr)]; found {
+		taskmasterd.LogLevel = val
+	}
+
+	delete(taskmasterdMap, "loglevel")
+}
+
 func parseAutoRestart(programMap map[string]any, program *Program) {
 	autoRestart, autoRestartFound := programMap["autorestart"]
 	if !autoRestartFound {
@@ -158,7 +186,7 @@ func parseAutoRestart(programMap map[string]any, program *Program) {
 		"on-failure": AUTORESTART_ON_FAILURE,
 	}
 
-	if val, found := autoRestartMap[autoRestartStr]; found {
+	if val, found := autoRestartMap[s.ToLower(autoRestartStr)]; found {
 		program.AutoRestart = val
 	}
 
@@ -226,12 +254,46 @@ func parseStopSignal(programMap map[string]any, program *Program) {
 	delete(programMap, "stopsignal")
 }
 
+func getDefaultTaskmasterd() (*Taskmasterd, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+
+	taskmasterd := Taskmasterd{
+		NoDaemon:    false,
+		NoCleanup:   false,
+		ChildLogDir: os.TempDir(),
+		LogFile:     cwd + "/taskmasterd.log",
+		LogLevel:    logger.INFO,
+	}
+
+	return &taskmasterd, nil
+}
+
 func taskmasterdHook() mapstructure.DecodeHookFunc {
 	return func(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
-		fmt.Printf("f: %+v, t: %+v, data: %+v\n", f, t, data)
 		if t == reflect.TypeOf(Taskmasterd{}) {
+			taskmasterd, err := getDefaultTaskmasterd()
+			if err != nil {
+				return nil, err
+			}
 
+			taskmasterdMap := data.(map[string]any)
+			parseLogLevel(taskmasterdMap, taskmasterd)
+
+			decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+				WeaklyTypedInput: true,
+				Result:           &taskmasterd,
+			})
+
+			if err := decoder.Decode(taskmasterdMap); err != nil {
+				return nil, err
+			}
+
+			return taskmasterd, nil
 		}
+
 		return data, nil
 	}
 }
@@ -242,7 +304,6 @@ func programsHook() mapstructure.DecodeHookFunc {
 			program := Program{
 				NumProcs:     1,
 				User:         "root",
-				Umask:        -1,
 				AutoStart:    true,
 				AutoRestart:  AUTORESTART_ON_FAILURE,
 				ExitCodes:    []int{0},
@@ -325,21 +386,6 @@ func readConfigFile(configPath string) ([]byte, error) {
 	return conf, nil
 }
 
-func setDefaultTaskmasterd(config *Config) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-
-	config.Taskmasterd.NoDaemon = true // TODO: set to false when daemon bonus implemented
-	config.Taskmasterd.NoCleanup = false
-	config.Taskmasterd.ChildLogDir = os.TempDir()
-	config.Taskmasterd.LogFile = cwd + "/taskmasterd.log"
-	config.Taskmasterd.LogLevel = logger.ERROR // TODO: set to INFO
-
-	return nil
-}
-
 func decodeRawMap(configMap map[string]any, key string, result any, decodeHook mapstructure.DecodeHookFunc) error {
 	raw, found := configMap[key]
 	if found {
@@ -354,10 +400,6 @@ func decodeRawMap(configMap map[string]any, key string, result any, decodeHook m
 }
 
 func parseTaskmasterd(configMap map[string]any, config *Config) error {
-	if err := setDefaultTaskmasterd(config); err != nil {
-		return fmt.Errorf("couldn't set default taskmasterd: %w", err)
-	}
-
 	if err := decodeRawMap(configMap, "taskmasterd", &config.Taskmasterd, taskmasterdHook()); err != nil {
 		return err
 	}

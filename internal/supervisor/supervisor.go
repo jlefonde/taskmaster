@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	s "strings"
 	"syscall"
@@ -15,49 +16,56 @@ import (
 	"taskmaster/internal/logger"
 )
 
-func getLogFile(LogFile string, programName string, outFile string, processNum int, numProcs int) string {
-	if LogFile != "" {
-		return LogFile
+func getLogFile(program *config.Program, childLogDir string, logFile string, programName string, outFile string, processNum int) string {
+	if logFile != "" && s.ToUpper(logFile) != "AUTO" {
+		return logFile
 	}
 
 	const charset string = "abcdefghijklmnopqrstuvwxyz0123456789"
 	const suffixLen int = 8
+
+	num := ""
+	if program.NumProcs > 1 {
+		num = "_" + strconv.Itoa(processNum)
+	}
 
 	suffix := make([]byte, suffixLen)
 	for i := range suffixLen {
 		suffix[i] = charset[rand.IntN(len(charset))]
 	}
 
-	childLogDir := "/var/log/"
-	num := ""
-	if numProcs > 1 {
-		num = "_" + strconv.Itoa(processNum)
-	}
+	logFileName := fmt.Sprintf("%s%s-%s---taskmaster-%s.log", programName, num, outFile, suffix)
 
-	return fmt.Sprintf("%s%s%s-%s---taskmaster-%s.log", childLogDir, programName, num, outFile, suffix)
+	return filepath.Join(childLogDir, logFileName)
 }
 
-func setLogFiles(programName string, program config.Program, processNum int, cmd *exec.Cmd) error {
-	stdoutLogFile := getLogFile(program.StdoutLogFile, programName, "stdout", processNum, program.NumProcs)
-	stdout, err := os.OpenFile(stdoutLogFile, os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		return fmt.Errorf("open stdout failed: %w", err)
+func setLogFiles(program *config.Program, childLogDir string, programName string, processNum int, cmd *exec.Cmd) error {
+
+	if s.ToUpper(program.StdoutLogFile) != "NONE" {
+		stdoutLogFile := getLogFile(program, childLogDir, program.StdoutLogFile, programName, "stdout", processNum)
+		stdout, err := os.OpenFile(stdoutLogFile, os.O_CREATE|os.O_RDWR, 0644)
+		if err != nil {
+			return fmt.Errorf("open stdout failed: %w", err)
+		}
+
+		cmd.Stdout = stdout
 	}
 
-	stderrLogFile := getLogFile(program.StderrLogFile, programName, "stderr", processNum, program.NumProcs)
-	stderr, err := os.OpenFile(stderrLogFile, os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		return fmt.Errorf("open stderr failed: %w", err)
-	}
+	if s.ToUpper(program.StderrLogFile) != "NONE" {
+		stderrLogFile := getLogFile(program, childLogDir, program.StderrLogFile, programName, "stderr", processNum)
+		stderr, err := os.OpenFile(stderrLogFile, os.O_CREATE|os.O_RDWR, 0644)
+		if err != nil {
+			return fmt.Errorf("open stderr failed: %w", err)
+		}
 
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+		cmd.Stderr = stderr
+	}
 
 	return nil
 }
 
-func cleanupLogFiles() error {
-	logDir, err := os.ReadDir("/var/log/")
+func cleanupLogFiles(childLogDir string) error {
+	logDir, err := os.ReadDir(childLogDir)
 	if err != nil {
 		return fmt.Errorf("read child log directory failed: %w", err)
 	} else {
@@ -66,7 +74,7 @@ func cleanupLogFiles() error {
 				continue
 			}
 
-			if err := os.Remove("/var/log/" + entry.Name()); err != nil {
+			if err := os.Remove(filepath.Join(childLogDir, entry.Name())); err != nil {
 				log.Println("Error: remove log file failed:", err)
 			}
 		}
@@ -76,13 +84,13 @@ func cleanupLogFiles() error {
 }
 
 func Run(config *config.Config) error {
-	log, err := logger.CreateLogger("/var/log/taskmasterd.log", logger.ERROR)
+	log, err := logger.CreateLogger(config.Taskmasterd.LogFile, config.Taskmasterd.LogLevel)
 	if err != nil {
 		return fmt.Errorf("couldn't create logger: %w", err)
 	}
 
 	if !config.Taskmasterd.NoCleanup {
-		if err := cleanupLogFiles(); err != nil {
+		if err := cleanupLogFiles(config.Taskmasterd.ChildLogDir); err != nil {
 			log.Warning("couldn't cleanup log files:", err)
 		}
 	}
@@ -114,7 +122,7 @@ func Run(config *config.Config) error {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 		cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
 		for i := range program.NumProcs {
-			if err := setLogFiles(programName, program, i, cmd); err != nil {
+			if err := setLogFiles(&program, config.Taskmasterd.ChildLogDir, programName, i, cmd); err != nil {
 				log.Warningf("couldn't set logfile for program '%s' (process %d): %v", programName, i, err)
 				continue
 			}
