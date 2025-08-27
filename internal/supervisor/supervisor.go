@@ -2,7 +2,6 @@ package supervisor
 
 import (
 	"fmt"
-	"log"
 	"math/rand/v2"
 	"os"
 	"os/exec"
@@ -64,7 +63,7 @@ func setLogFiles(program *config.Program, childLogDir string, programName string
 	return nil
 }
 
-func cleanupLogFiles(childLogDir string) error {
+func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
 	logDir, err := os.ReadDir(childLogDir)
 	if err != nil {
 		return fmt.Errorf("read child log directory failed: %w", err)
@@ -75,7 +74,7 @@ func cleanupLogFiles(childLogDir string) error {
 			}
 
 			if err := os.Remove(filepath.Join(childLogDir, entry.Name())); err != nil {
-				log.Println("Error: remove log file failed:", err)
+				log.Warning("remove log file failed:", err)
 			}
 		}
 	}
@@ -90,7 +89,7 @@ func Run(config *config.Config) error {
 	}
 
 	if !config.Taskmasterd.NoCleanup {
-		if err := cleanupLogFiles(config.Taskmasterd.ChildLogDir); err != nil {
+		if err := cleanupLogFiles(log, config.Taskmasterd.ChildLogDir); err != nil {
 			log.Warning("couldn't cleanup log files:", err)
 		}
 	}
@@ -98,10 +97,18 @@ func Run(config *config.Config) error {
 	fmt.Printf("taskmaster: %+v\n\n", config.Taskmasterd)
 	for programName, program := range config.Programs {
 		fmt.Printf("%s: %+v\n", programName, program)
+		if !program.AutoStart {
+			continue
+		}
 
-		cmd := exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", program.Umask, program.Cmd))
+		var cmd *exec.Cmd
+		if program.Umask != nil {
+			cmd = exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", *program.Umask, program.Cmd))
+		} else {
+			cmd = exec.Command("sh", "-c", program.Cmd)
+		}
+
 		cmd.Env = os.Environ()
-
 		for envKey, envVal := range program.Env {
 			cmd.Env = append(cmd.Env, envKey+"="+envVal)
 		}
@@ -118,12 +125,12 @@ func Run(config *config.Config) error {
 
 		uid, _ := strconv.ParseInt(user.Uid, 10, 32)
 		gid, _ := strconv.ParseInt(user.Gid, 10, 32)
-
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 		cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
-		for i := range program.NumProcs {
-			if err := setLogFiles(&program, config.Taskmasterd.ChildLogDir, programName, i, cmd); err != nil {
-				log.Warningf("couldn't set logfile for program '%s' (process %d): %v", programName, i, err)
+
+		for processNum := range program.NumProcs {
+			if err := setLogFiles(&program, config.Taskmasterd.ChildLogDir, programName, processNum, cmd); err != nil {
+				log.Warningf("couldn't set logfile for program '%s' (process %d): %v", programName, processNum, err)
 				continue
 			}
 

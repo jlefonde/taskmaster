@@ -1,14 +1,13 @@
 taskmasterd:
     nodaemon: true
     nocleanup: false
-    childlogdir: ./
-    logfile: /var/log/taskmasterd.log
+    childlogdir: /var/log/taskmasterd/
+    logfile: /var/log/taskmasterd/taskmasterd.log
     loglevel: error
 programs:
     test:
         cmd: echo "Hello, World!"
         numprocs: 1
-        umask: 022
         autostart: true
         autorestart: always
         exitcodes:
@@ -22,4 +21,4 @@ programs:
         env:
             STARTED_BY: taskmaster
             ANSWER: 42
-        stdout_logfile: none
+        stderr_logfile: auto
