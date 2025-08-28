@@ -6,8 +6,8 @@ taskmasterd:
     loglevel: error
 programs:
     test:
-        cmd: tail -f
-        numprocs: 1
+        cmd: echo "test"
+        numprocs: 2
         autostart: true
         autorestart: always
         exitcodes:

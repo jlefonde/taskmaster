@@ -15,11 +15,17 @@ import (
 	"taskmaster/internal/logger"
 )
 
+type ManagedProcess struct {
+	Name    string
+	Process *os.Process
+}
+
 type ProgramManager struct {
 	Name        string
 	Config      *config.Program
 	ChildLogDir string
 	Log         *logger.Logger
+	Processes   map[int]*ManagedProcess
 }
 
 func NewProgramManager(programName string, programConfig *config.Program, childLogDir string, log *logger.Logger) *ProgramManager {
@@ -28,6 +34,7 @@ func NewProgramManager(programName string, programConfig *config.Program, childL
 		Config:      programConfig,
 		ChildLogDir: childLogDir,
 		Log:         log,
+		Processes:   make(map[int]*ManagedProcess),
 	}
 
 	return &pm
@@ -39,7 +46,7 @@ func (pm *ProgramManager) getDefaultLogFile(outFile string, processNum int) stri
 
 	num := ""
 	if pm.Config.NumProcs > 1 {
-		num = "_" + strconv.Itoa(processNum)
+		num = "_" + fmt.Sprintf("%02d", processNum)
 	}
 
 	suffix := make([]byte, suffixLen)
@@ -87,44 +94,64 @@ func (pm *ProgramManager) setProcessStdLogs(cmd *exec.Cmd, processNum int) error
 	return nil
 }
 
+func (pm *ProgramManager) getProcessName(processNum int) string {
+	if pm.Config.NumProcs == 1 {
+		return pm.Name
+	}
+
+	return fmt.Sprintf("%s:%s_%02d", pm.Name, pm.Name, processNum)
+}
+
 func (pm *ProgramManager) Run() error {
-	fmt.Printf("%s: %+v\n", pm.Name, pm.Config)
-
-	var cmd *exec.Cmd
-	if pm.Config.Umask != nil {
-		cmd = exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", *pm.Config.Umask, pm.Config.Cmd))
-	} else {
-		cmd = exec.Command("sh", "-c", pm.Config.Cmd)
-	}
-
-	cmd.Env = os.Environ()
-	for envKey, envVal := range pm.Config.Env {
-		cmd.Env = append(cmd.Env, envKey+"="+envVal)
-	}
-
-	if pm.Config.WorkingDir != "" {
-		cmd.Dir = pm.Config.WorkingDir
-	}
-
-	user, err := user.Lookup(pm.Config.User)
-	if err != nil {
-		return fmt.Errorf("user lookup failed: %w", err)
-	}
-
-	uid, _ := strconv.ParseInt(user.Uid, 10, 32)
-	gid, _ := strconv.ParseInt(user.Gid, 10, 32)
-	cmd.SysProcAttr = &syscall.SysProcAttr{}
-	cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
+	fmt.Printf("%s: %+v\n\n", pm.Name, pm.Config)
 
 	for processNum := range pm.Config.NumProcs {
+		var cmd *exec.Cmd
+		if pm.Config.Umask != nil {
+			cmd = exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", *pm.Config.Umask, pm.Config.Cmd))
+		} else {
+			cmd = exec.Command("sh", "-c", pm.Config.Cmd)
+		}
+
+		cmd.Env = os.Environ()
+		for envKey, envVal := range pm.Config.Env {
+			cmd.Env = append(cmd.Env, envKey+"="+envVal)
+		}
+
+		if pm.Config.WorkingDir != "" {
+			cmd.Dir = pm.Config.WorkingDir
+		}
+
+		user, err := user.Lookup(pm.Config.User)
+		if err != nil {
+			return fmt.Errorf("user lookup failed: %w", err)
+		}
+
+		uid, _ := strconv.ParseInt(user.Uid, 10, 32)
+		gid, _ := strconv.ParseInt(user.Gid, 10, 32)
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+		cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
+
 		if err := pm.setProcessStdLogs(cmd, processNum); err != nil {
 			pm.Log.Warningf("couldn't set logfile for program '%s' (process %d): %v", pm.Name, processNum, err)
 			continue
 		}
 
-		if err := cmd.Run(); err != nil {
+		if err := cmd.Start(); err != nil {
 			pm.Log.Warning("running process failed:", err)
+			continue
 		}
+
+		pm.Processes[cmd.Process.Pid] = &ManagedProcess{
+			Name:    pm.getProcessName(processNum),
+			Process: cmd.Process,
+		}
+
+		go func(pm *ProgramManager, cmd *exec.Cmd) {
+			cmd.Wait()
+		}(pm, cmd)
+
+		fmt.Printf("process_%02d: %+v\n", processNum, pm.Processes[cmd.Process.Pid])
 	}
 
 	fmt.Println("")
