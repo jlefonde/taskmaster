@@ -52,7 +52,7 @@ func Run(config *config.Config) error {
 		go func(pm *program.ProgramManager) {
 			defer wg.Done()
 
-			if err := programManager.Run(); err != nil {
+			if err := pm.Run(); err != nil {
 				log.Warningf("program '%s' failed: %v", pm.Name, err)
 			}
 		}(programManager)

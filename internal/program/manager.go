@@ -10,6 +10,7 @@ import (
 	"strconv"
 	s "strings"
 	"syscall"
+	"time"
 
 	"taskmaster/internal/config"
 	"taskmaster/internal/logger"
@@ -102,43 +103,50 @@ func (pm *ProgramManager) getProcessName(processNum int) string {
 	return fmt.Sprintf("%s:%s_%02d", pm.Name, pm.Name, processNum)
 }
 
+func (pm *ProgramManager) prepareCmd(processNum int) (*exec.Cmd, error) {
+	var cmd *exec.Cmd
+	if pm.Config.Umask != nil {
+		cmd = exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", *pm.Config.Umask, pm.Config.Cmd))
+	} else {
+		cmd = exec.Command("sh", "-c", pm.Config.Cmd)
+	}
+
+	cmd.Env = os.Environ()
+	for envKey, envVal := range pm.Config.Env {
+		cmd.Env = append(cmd.Env, envKey+"="+envVal)
+	}
+
+	cmd.Dir = pm.Config.WorkingDir
+
+	user, err := user.Lookup(pm.Config.User)
+	if err != nil {
+		return nil, fmt.Errorf("user lookup failed: %w", err)
+	}
+
+	uid, _ := strconv.ParseInt(user.Uid, 10, 32)
+	gid, _ := strconv.ParseInt(user.Gid, 10, 32)
+	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
+
+	if err := pm.setProcessStdLogs(cmd, processNum); err != nil {
+		return nil, fmt.Errorf("couldn't set logfile: %w", err)
+	}
+
+	return cmd, nil
+}
+
 func (pm *ProgramManager) Run() error {
 	fmt.Printf("%s: %+v\n\n", pm.Name, pm.Config)
 
+	exited := make(chan error, 1)
 	for processNum := range pm.Config.NumProcs {
-		var cmd *exec.Cmd
-		if pm.Config.Umask != nil {
-			cmd = exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", *pm.Config.Umask, pm.Config.Cmd))
-		} else {
-			cmd = exec.Command("sh", "-c", pm.Config.Cmd)
-		}
-
-		cmd.Env = os.Environ()
-		for envKey, envVal := range pm.Config.Env {
-			cmd.Env = append(cmd.Env, envKey+"="+envVal)
-		}
-
-		if pm.Config.WorkingDir != "" {
-			cmd.Dir = pm.Config.WorkingDir
-		}
-
-		user, err := user.Lookup(pm.Config.User)
+		cmd, err := pm.prepareCmd(processNum)
 		if err != nil {
-			return fmt.Errorf("user lookup failed: %w", err)
-		}
-
-		uid, _ := strconv.ParseInt(user.Uid, 10, 32)
-		gid, _ := strconv.ParseInt(user.Gid, 10, 32)
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-		cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
-
-		if err := pm.setProcessStdLogs(cmd, processNum); err != nil {
-			pm.Log.Warningf("couldn't set logfile for program '%s' (process %d): %v", pm.Name, processNum, err)
+			pm.Log.Warningf("prepare cmd failed for program '%s' (process %d): %v", pm.Name, processNum, err)
 			continue
 		}
 
 		if err := cmd.Start(); err != nil {
-			pm.Log.Warning("running process failed:", err)
 			continue
 		}
 
@@ -147,14 +155,18 @@ func (pm *ProgramManager) Run() error {
 			Process: cmd.Process,
 		}
 
-		go func(pm *ProgramManager, cmd *exec.Cmd) {
-			cmd.Wait()
-		}(pm, cmd)
+		go func(cmd *exec.Cmd) {
+			exited <- cmd.Wait()
+		}(cmd)
 
 		fmt.Printf("process_%02d: %+v\n", processNum, pm.Processes[cmd.Process.Pid])
 	}
 
-	fmt.Println("")
+	for {
+		time.Sleep(10 * time.Second)
+	}
+
+	// fmt.Println("")
 
 	return nil
 }
