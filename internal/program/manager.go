@@ -163,7 +163,7 @@ func (pm *ProgramManager) getProcessName(processNum int) string {
 	return fmt.Sprintf("%s:%s_%02d", pm.Name, pm.Name, processNum)
 }
 
-func (pm *ProgramManager) prepareCmd(processNum int) (*exec.Cmd, error) {
+func (pm *ProgramManager) newCmd(processNum int) (*exec.Cmd, error) {
 	var cmd *exec.Cmd
 	if pm.Config.Umask != nil {
 		cmd = exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", *pm.Config.Umask, pm.Config.Cmd))
@@ -217,7 +217,14 @@ func (pm *ProgramManager) Run() error {
 
 	exited := make(chan error, 1)
 	for processNum := range pm.Config.NumProcs {
-		cmd, err := pm.prepareCmd(processNum)
+		processName := pm.getProcessName(processNum)
+		pm.Processes[processName] = &ManagedProcess{
+			State: STOPPED,
+		}
+
+		pm.sendEvent(START, processName)
+
+		cmd, err := pm.newCmd(processNum)
 		if err != nil {
 			pm.Log.Warningf("prepare cmd failed for program '%s' (process %d): %v", pm.Name, processNum, err)
 			continue
@@ -227,16 +234,13 @@ func (pm *ProgramManager) Run() error {
 			continue
 		}
 
-		pm.Processes[pm.getProcessName(processNum)] = &ManagedProcess{
-			Process: cmd.Process,
-			State:   STOPPED,
-		}
+		pm.Processes[processName].Process = cmd.Process
 
 		go func(cmd *exec.Cmd) {
 			exited <- cmd.Wait()
 		}(cmd)
 
-		fmt.Printf("process_%02d: %+v\n", processNum, pm.Processes[pm.getProcessName(processNum)])
+		fmt.Printf("process_%02d: %+v\n", processNum, pm.Processes[processName])
 	}
 
 	for {
