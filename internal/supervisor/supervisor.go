@@ -2,66 +2,15 @@ package supervisor
 
 import (
 	"fmt"
-	"math/rand/v2"
 	"os"
-	"os/exec"
-	"os/user"
 	"path/filepath"
-	"strconv"
 	s "strings"
-	"syscall"
+	"sync"
 
 	"taskmaster/internal/config"
 	"taskmaster/internal/logger"
+	"taskmaster/internal/program"
 )
-
-func getLogFile(program *config.Program, childLogDir string, logFile string, programName string, outFile string, processNum int) string {
-	if logFile != "" && s.ToUpper(logFile) != "AUTO" {
-		return logFile
-	}
-
-	const charset string = "abcdefghijklmnopqrstuvwxyz0123456789"
-	const suffixLen int = 8
-
-	num := ""
-	if program.NumProcs > 1 {
-		num = "_" + strconv.Itoa(processNum)
-	}
-
-	suffix := make([]byte, suffixLen)
-	for i := range suffixLen {
-		suffix[i] = charset[rand.IntN(len(charset))]
-	}
-
-	logFileName := fmt.Sprintf("%s%s-%s---taskmaster-%s.log", programName, num, outFile, suffix)
-
-	return filepath.Join(childLogDir, logFileName)
-}
-
-func setLogFiles(program *config.Program, childLogDir string, programName string, processNum int, cmd *exec.Cmd) error {
-
-	if s.ToUpper(program.StdoutLogFile) != "NONE" {
-		stdoutLogFile := getLogFile(program, childLogDir, program.StdoutLogFile, programName, "stdout", processNum)
-		stdout, err := os.OpenFile(stdoutLogFile, os.O_CREATE|os.O_RDWR, 0644)
-		if err != nil {
-			return fmt.Errorf("open stdout failed: %w", err)
-		}
-
-		cmd.Stdout = stdout
-	}
-
-	if s.ToUpper(program.StderrLogFile) != "NONE" {
-		stderrLogFile := getLogFile(program, childLogDir, program.StderrLogFile, programName, "stderr", processNum)
-		stderr, err := os.OpenFile(stderrLogFile, os.O_CREATE|os.O_RDWR, 0644)
-		if err != nil {
-			return fmt.Errorf("open stderr failed: %w", err)
-		}
-
-		cmd.Stderr = stderr
-	}
-
-	return nil
-}
 
 func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
 	logDir, err := os.ReadDir(childLogDir)
@@ -95,52 +44,21 @@ func Run(config *config.Config) error {
 	}
 
 	fmt.Printf("taskmaster: %+v\n\n", config.Taskmasterd)
-	for programName, program := range config.Programs {
-		fmt.Printf("%s: %+v\n", programName, program)
-		if !program.AutoStart {
-			continue
-		}
+	var wg sync.WaitGroup
+	for programName, programConfig := range config.Programs {
+		programManager := program.NewProgramManager(programName, &programConfig, config.Taskmasterd.ChildLogDir, log)
 
-		var cmd *exec.Cmd
-		if program.Umask != nil {
-			cmd = exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", *program.Umask, program.Cmd))
-		} else {
-			cmd = exec.Command("sh", "-c", program.Cmd)
-		}
+		wg.Add(1)
+		go func(pm *program.ProgramManager) {
+			defer wg.Done()
 
-		cmd.Env = os.Environ()
-		for envKey, envVal := range program.Env {
-			cmd.Env = append(cmd.Env, envKey+"="+envVal)
-		}
-
-		if program.WorkingDir != "" {
-			cmd.Dir = program.WorkingDir
-		}
-
-		user, err := user.Lookup(program.User)
-		if err != nil {
-			log.Error("user lookup failed:", err)
-			continue
-		}
-
-		uid, _ := strconv.ParseInt(user.Uid, 10, 32)
-		gid, _ := strconv.ParseInt(user.Gid, 10, 32)
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-		cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
-
-		for processNum := range program.NumProcs {
-			if err := setLogFiles(&program, config.Taskmasterd.ChildLogDir, programName, processNum, cmd); err != nil {
-				log.Warningf("couldn't set logfile for program '%s' (process %d): %v", programName, processNum, err)
-				continue
+			if err := programManager.Run(); err != nil {
+				log.Warningf("program '%s' failed: %v", pm.Name, err)
 			}
-
-			if err := cmd.Run(); err != nil {
-				log.Warning("running process failed:", err)
-			}
-		}
-
-		fmt.Println("")
+		}(programManager)
 	}
+
+	wg.Wait()
 
 	return nil
 }

@@ -6,7 +6,7 @@ taskmasterd:
     loglevel: error
 programs:
     test:
-        cmd: echo "Hello, World!"
+        cmd: tail -f
         numprocs: 1
         autostart: true
         autorestart: always
