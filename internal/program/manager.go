@@ -16,9 +16,35 @@ import (
 	"taskmaster/internal/logger"
 )
 
+type State string
+type Event string
+
+const (
+	STOPPED  State = "STOPPED"
+	STARTING State = "STARTING"
+	RUNNING  State = "RUNNING"
+	BACKOFF  State = "BACKOFF"
+	STOPPING State = "STOPPING"
+	EXITED   State = "EXITED"
+	FATAL    State = "FATAL"
+
+	START           Event = "START"
+	STOP            Event = "STOP"
+	PROCESS_STARTED Event = "PROCESS_STARTED"
+	PROCESS_STOPPED Event = "PROCESS_STOPPED"
+	PROCESS_EXITED  Event = "PROCESS_EXITED"
+	PROCESS_FAILED  Event = "PROCESS_FAILED"
+	TIMEOUT         Event = "TIMEOUT"
+)
+
+type Transition struct {
+	To     State
+	Action func()
+}
+
 type ManagedProcess struct {
-	Name    string
 	Process *os.Process
+	State   State
 }
 
 type ProgramManager struct {
@@ -26,7 +52,40 @@ type ProgramManager struct {
 	Config      *config.Program
 	ChildLogDir string
 	Log         *logger.Logger
-	Processes   map[int]*ManagedProcess
+	Processes   map[string]*ManagedProcess
+	Transitions *map[State]map[Event]Transition
+}
+
+func newTransitions() *map[State]map[Event]Transition {
+	transitionGraph := map[State]map[Event]Transition{
+		STOPPED: {
+			START: {To: STARTING, Action: func() { fmt.Println("STOPPED -> STARTING") }},
+		},
+		STARTING: {
+			PROCESS_STARTED: {To: RUNNING, Action: func() { fmt.Println("STARTING -> RUNNING") }},
+			STOP:            {To: STOPPING, Action: func() { fmt.Println("STARTING -> STOPPING") }},
+			PROCESS_EXITED:  {To: BACKOFF, Action: func() { fmt.Println("STARTING -> BACKOFF") }},
+		},
+		RUNNING: {
+			PROCESS_EXITED: {To: EXITED, Action: func() { fmt.Println("RUNNING -> EXITED") }},
+			STOP:           {To: STOPPING, Action: func() { fmt.Println("RUNNING -> STOPPING") }},
+		},
+		BACKOFF: {
+			START:   {To: STARTING, Action: func() { fmt.Println("BACKOFF -> STARTING") }},
+			TIMEOUT: {To: FATAL, Action: func() { fmt.Println("BACKOFF -> FATAL") }},
+		},
+		STOPPING: {
+			PROCESS_STOPPED: {To: STOPPED, Action: func() { fmt.Println("STOPPING -> STOPPED") }},
+		},
+		EXITED: {
+			START: {To: STARTING, Action: func() { fmt.Println("EXITED -> STARTING") }},
+		},
+		FATAL: {
+			START: {To: STARTING, Action: func() { fmt.Println("FATAL -> STARTING") }},
+		},
+	}
+
+	return &transitionGraph
 }
 
 func NewProgramManager(programName string, programConfig *config.Program, childLogDir string, log *logger.Logger) *ProgramManager {
@@ -35,7 +94,8 @@ func NewProgramManager(programName string, programConfig *config.Program, childL
 		Config:      programConfig,
 		ChildLogDir: childLogDir,
 		Log:         log,
-		Processes:   make(map[int]*ManagedProcess),
+		Processes:   make(map[string]*ManagedProcess),
+		Transitions: newTransitions(),
 	}
 
 	return &pm
@@ -135,6 +195,23 @@ func (pm *ProgramManager) prepareCmd(processNum int) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
+func (pm *ProgramManager) sendEvent(event Event, processName string) error {
+	mp, found := pm.Processes[processName]
+	if !found {
+		return fmt.Errorf("process '%s' not found", processName)
+	}
+
+	transition, found := (*pm.Transitions)[mp.State][event]
+	if !found {
+		return fmt.Errorf("invalid event '%q' for state '%q'", event, mp.State)
+	}
+
+	transition.Action()
+	mp.State = transition.To
+
+	return nil
+}
+
 func (pm *ProgramManager) Run() error {
 	fmt.Printf("%s: %+v\n\n", pm.Name, pm.Config)
 
@@ -150,16 +227,16 @@ func (pm *ProgramManager) Run() error {
 			continue
 		}
 
-		pm.Processes[cmd.Process.Pid] = &ManagedProcess{
-			Name:    pm.getProcessName(processNum),
+		pm.Processes[pm.getProcessName(processNum)] = &ManagedProcess{
 			Process: cmd.Process,
+			State:   STOPPED,
 		}
 
 		go func(cmd *exec.Cmd) {
 			exited <- cmd.Wait()
 		}(cmd)
 
-		fmt.Printf("process_%02d: %+v\n", processNum, pm.Processes[cmd.Process.Pid])
+		fmt.Printf("process_%02d: %+v\n", processNum, pm.Processes[pm.getProcessName(processNum)])
 	}
 
 	for {

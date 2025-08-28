@@ -9,13 +9,13 @@ import (
 type LogLevel int
 
 const (
-	FATAL   LogLevel = iota
-	ERROR   LogLevel = iota
-	WARNING LogLevel = iota
-	INFO    LogLevel = iota
-	DEBUG   LogLevel = iota
-	UNKNOWN LogLevel = iota
-	NONE    LogLevel = iota
+	FATAL LogLevel = iota
+	ERROR
+	WARNING
+	INFO
+	DEBUG
+	UNKNOWN
+	NONE
 )
 
 type Logger struct {
