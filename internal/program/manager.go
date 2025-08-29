@@ -69,10 +69,14 @@ type ProgramManager struct {
 func (pm *ProgramManager) startCmd(processName string) Event {
 	mp := pm.Processes[processName]
 
-	cmd, err := pm.newCmd(mp.Num)
-	if err != nil {
-		pm.Log.Warningf("prepare cmd failed for program '%s' (process %d): %v", pm.Name, mp.Num, err)
-		return PROCESS_EXITED
+	var cmd *exec.Cmd = mp.Cmd
+	if cmd == nil {
+		var err error
+		cmd, err = pm.newCmd(mp.Num)
+		if err != nil {
+			pm.Log.Warningf("prepare cmd failed for program '%s' (process %d): %v", pm.Name, mp.Num, err)
+			return PROCESS_EXITED
+		}
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -87,6 +91,22 @@ func (pm *ProgramManager) startCmd(processName string) Event {
 	}(cmd)
 
 	return PROCESS_STARTED
+}
+
+func (pm *ProgramManager) restartCmd(processName string) Event {
+	mp := pm.Processes[processName]
+
+	if pm.Config.AutoRestart == config.AUTORESTART_NEVER || mp.RestartCount >= pm.Config.StartRetries {
+		return TIMEOUT
+	}
+
+	mp.RestartCount++
+
+	delay := time.Duration(mp.RestartCount) * time.Second
+	fmt.Printf("Restarting process '%s' in %v seconds (attempt %d)\n", processName, delay, mp.RestartCount)
+	time.Sleep(delay)
+
+	return START
 }
 
 func newTransitions() *map[State]map[Event]Transition {
@@ -108,7 +128,7 @@ func newTransitions() *map[State]map[Event]Transition {
 			}},
 			PROCESS_EXITED: {To: BACKOFF, Action: func(pm *ProgramManager, processName string) Event {
 				fmt.Println("STARTING -> BACKOFF")
-				return ""
+				return pm.restartCmd(processName)
 			}},
 		},
 		RUNNING: {
@@ -124,7 +144,7 @@ func newTransitions() *map[State]map[Event]Transition {
 		BACKOFF: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, processName string) Event {
 				fmt.Println("BACKOFF -> STARTING")
-				return ""
+				return pm.startCmd(processName)
 			}},
 			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, processName string) Event {
 				fmt.Println("BACKOFF -> FATAL")
@@ -272,14 +292,12 @@ func (pm *ProgramManager) sendEvent(event Event, processName string) error {
 		return fmt.Errorf("invalid event '%q' for state '%q'", event, mp.State)
 	}
 
-	fmt.Printf("process_%02d: %+v\n", mp.Num, pm.Processes[processName])
+	// fmt.Printf("process_%02d: %+v\n", mp.Num, pm.Processes[processName])
 
 	mp.State = transition.To
 	if event := transition.Action(pm, processName); event != "" {
 		return pm.sendEvent(event, processName)
 	}
-
-	fmt.Printf("process_%02d: %+v\n", mp.Num, pm.Processes[processName])
 
 	return nil
 }
@@ -296,7 +314,7 @@ func (pm *ProgramManager) Run() error {
 		}
 
 		if pm.Config.AutoStart {
-			pm.sendEvent(START, processName)
+			go pm.sendEvent(START, processName)
 		}
 	}
 

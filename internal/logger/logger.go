@@ -31,11 +31,11 @@ func CreateLogger(LogFilePath string, logLevel LogLevel) (*Logger, error) {
 	}
 
 	return &Logger{log.New(LogFile, "", log.Lmsgprefix|log.Ldate|log.Ltime), logLevel, []string{
-		FATAL:   "FATAL  ",
-		ERROR:   "ERROR  ",
-		WARNING: "WARNING",
-		INFO:    "INFO   ",
-		DEBUG:   "DEBUG  ",
+		FATAL:   "FATAL   ",
+		ERROR:   "ERROR   ",
+		WARNING: "WARNING ",
+		INFO:    "INFO    ",
+		DEBUG:   "DEBUG   ",
 	}}, nil
 }
 
