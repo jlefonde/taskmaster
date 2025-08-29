@@ -37,16 +37,24 @@ const (
 	TIMEOUT         Event = "TIMEOUT"
 )
 
+type ProcessExitInfo struct {
+	ExitTime time.Time
+	Err      error
+}
+
 type Transition struct {
 	To     State
 	Action func(pm *ProgramManager, processName string) Event
 }
 
 type ManagedProcess struct {
-	Num      int
-	Process  *os.Process
-	State    State
-	ExitChan chan error
+	Num          int
+	Cmd          *exec.Cmd
+	State        State
+	StartTime    time.Time
+	ExitTime     time.Time
+	RestartCount int
+	ExitChan     chan ProcessExitInfo
 }
 
 type ProgramManager struct {
@@ -71,10 +79,11 @@ func (pm *ProgramManager) startCmd(processName string) Event {
 		return PROCESS_EXITED
 	}
 
-	mp.Process = cmd.Process
+	mp.StartTime = time.Now()
+	mp.Cmd = cmd
 
 	go func(cmd *exec.Cmd) {
-		mp.ExitChan <- cmd.Wait()
+		mp.ExitChan <- ProcessExitInfo{ExitTime: time.Now(), Err: cmd.Wait()}
 	}(cmd)
 
 	return PROCESS_STARTED
@@ -270,6 +279,8 @@ func (pm *ProgramManager) sendEvent(event Event, processName string) error {
 		return pm.sendEvent(event, processName)
 	}
 
+	fmt.Printf("process_%02d: %+v\n", mp.Num, pm.Processes[processName])
+
 	return nil
 }
 
@@ -281,22 +292,21 @@ func (pm *ProgramManager) Run() error {
 		pm.Processes[processName] = &ManagedProcess{
 			Num:      processNum,
 			State:    STOPPED,
-			ExitChan: make(chan error, 1),
+			ExitChan: make(chan ProcessExitInfo, 1),
 		}
 
 		if pm.Config.AutoStart {
 			pm.sendEvent(START, processName)
 		}
-
-		fmt.Printf("process_%02d: %+v\n", processNum, pm.Processes[processName])
 	}
 
 	for {
-		select {}
-		time.Sleep(10 * time.Second)
+		for processName, mp := range pm.Processes {
+			var exitInfo ProcessExitInfo = <-mp.ExitChan
+			mp.ExitTime = exitInfo.ExitTime
+			pm.sendEvent(PROCESS_EXITED, processName)
+		}
+
+		time.Sleep(1 * time.Second)
 	}
-
-	// fmt.Println("")
-
-	return nil
 }
