@@ -39,12 +39,14 @@ const (
 
 type Transition struct {
 	To     State
-	Action func()
+	Action func(pm *ProgramManager, processName string) Event
 }
 
 type ManagedProcess struct {
-	Process *os.Process
-	State   State
+	Num      int
+	Process  *os.Process
+	State    State
+	ExitChan chan error
 }
 
 type ProgramManager struct {
@@ -56,32 +58,87 @@ type ProgramManager struct {
 	Transitions *map[State]map[Event]Transition
 }
 
+func (pm *ProgramManager) startCmd(processName string) Event {
+	mp := pm.Processes[processName]
+
+	cmd, err := pm.newCmd(mp.Num)
+	if err != nil {
+		pm.Log.Warningf("prepare cmd failed for program '%s' (process %d): %v", pm.Name, mp.Num, err)
+		return PROCESS_EXITED
+	}
+
+	if err := cmd.Start(); err != nil {
+		return PROCESS_EXITED
+	}
+
+	mp.Process = cmd.Process
+
+	go func(cmd *exec.Cmd) {
+		mp.ExitChan <- cmd.Wait()
+	}(cmd)
+
+	return PROCESS_STARTED
+}
+
 func newTransitions() *map[State]map[Event]Transition {
 	transitionGraph := map[State]map[Event]Transition{
 		STOPPED: {
-			START: {To: STARTING, Action: func() { fmt.Println("STOPPED -> STARTING") }},
+			START: {To: STARTING, Action: func(pm *ProgramManager, processName string) Event {
+				fmt.Println("STOPPED -> STARTING")
+				return pm.startCmd(processName)
+			}},
 		},
 		STARTING: {
-			PROCESS_STARTED: {To: RUNNING, Action: func() { fmt.Println("STARTING -> RUNNING") }},
-			STOP:            {To: STOPPING, Action: func() { fmt.Println("STARTING -> STOPPING") }},
-			PROCESS_EXITED:  {To: BACKOFF, Action: func() { fmt.Println("STARTING -> BACKOFF") }},
+			PROCESS_STARTED: {To: RUNNING, Action: func(pm *ProgramManager, processName string) Event {
+				fmt.Println("STARTING -> RUNNING")
+				return ""
+			}},
+			STOP: {To: STOPPING, Action: func(pm *ProgramManager, processName string) Event {
+				fmt.Println("STARTING -> STOPPING")
+				return ""
+			}},
+			PROCESS_EXITED: {To: BACKOFF, Action: func(pm *ProgramManager, processName string) Event {
+				fmt.Println("STARTING -> BACKOFF")
+				return ""
+			}},
 		},
 		RUNNING: {
-			PROCESS_EXITED: {To: EXITED, Action: func() { fmt.Println("RUNNING -> EXITED") }},
-			STOP:           {To: STOPPING, Action: func() { fmt.Println("RUNNING -> STOPPING") }},
+			PROCESS_EXITED: {To: EXITED, Action: func(pm *ProgramManager, processName string) Event {
+				fmt.Println("RUNNING -> EXITED")
+				return ""
+			}},
+			STOP: {To: STOPPING, Action: func(pm *ProgramManager, processName string) Event {
+				fmt.Println("RUNNING -> STOPPING")
+				return ""
+			}},
 		},
 		BACKOFF: {
-			START:   {To: STARTING, Action: func() { fmt.Println("BACKOFF -> STARTING") }},
-			TIMEOUT: {To: FATAL, Action: func() { fmt.Println("BACKOFF -> FATAL") }},
+			START: {To: STARTING, Action: func(pm *ProgramManager, processName string) Event {
+				fmt.Println("BACKOFF -> STARTING")
+				return ""
+			}},
+			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, processName string) Event {
+				fmt.Println("BACKOFF -> FATAL")
+				return ""
+			}},
 		},
 		STOPPING: {
-			PROCESS_STOPPED: {To: STOPPED, Action: func() { fmt.Println("STOPPING -> STOPPED") }},
+			PROCESS_STOPPED: {To: STOPPED, Action: func(pm *ProgramManager, processName string) Event {
+				fmt.Println("STOPPING -> STOPPED")
+				return ""
+			}},
 		},
 		EXITED: {
-			START: {To: STARTING, Action: func() { fmt.Println("EXITED -> STARTING") }},
+			START: {To: STARTING, Action: func(pm *ProgramManager, processName string) Event {
+				fmt.Println("EXITED -> STARTING")
+				return ""
+			}},
 		},
 		FATAL: {
-			START: {To: STARTING, Action: func() { fmt.Println("FATAL -> STARTING") }},
+			START: {To: STARTING, Action: func(pm *ProgramManager, processName string) Event {
+				fmt.Println("FATAL -> STARTING")
+				return ""
+			}},
 		},
 	}
 
@@ -206,8 +263,12 @@ func (pm *ProgramManager) sendEvent(event Event, processName string) error {
 		return fmt.Errorf("invalid event '%q' for state '%q'", event, mp.State)
 	}
 
-	transition.Action()
+	fmt.Printf("process_%02d: %+v\n", mp.Num, pm.Processes[processName])
+
 	mp.State = transition.To
+	if event := transition.Action(pm, processName); event != "" {
+		return pm.sendEvent(event, processName)
+	}
 
 	return nil
 }
@@ -215,35 +276,23 @@ func (pm *ProgramManager) sendEvent(event Event, processName string) error {
 func (pm *ProgramManager) Run() error {
 	fmt.Printf("%s: %+v\n\n", pm.Name, pm.Config)
 
-	exited := make(chan error, 1)
 	for processNum := range pm.Config.NumProcs {
 		processName := pm.getProcessName(processNum)
 		pm.Processes[processName] = &ManagedProcess{
-			State: STOPPED,
+			Num:      processNum,
+			State:    STOPPED,
+			ExitChan: make(chan error, 1),
 		}
 
-		pm.sendEvent(START, processName)
-
-		cmd, err := pm.newCmd(processNum)
-		if err != nil {
-			pm.Log.Warningf("prepare cmd failed for program '%s' (process %d): %v", pm.Name, processNum, err)
-			continue
+		if pm.Config.AutoStart {
+			pm.sendEvent(START, processName)
 		}
-
-		if err := cmd.Start(); err != nil {
-			continue
-		}
-
-		pm.Processes[processName].Process = cmd.Process
-
-		go func(cmd *exec.Cmd) {
-			exited <- cmd.Wait()
-		}(cmd)
 
 		fmt.Printf("process_%02d: %+v\n", processNum, pm.Processes[processName])
 	}
 
 	for {
+		select {}
 		time.Sleep(10 * time.Second)
 	}
 
