@@ -107,11 +107,6 @@ func newTransitions() *map[State]map[Event]Transition {
 				pm.printTransition(mp.Num, BACKOFF, STARTING)
 				return pm.startProcess(mp)
 			}},
-			STOP: {To: STOPPED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, BACKOFF, STOPPED)
-				pm.printTransition(mp.Num, BACKOFF, STOPPED)
-				return pm.stopProcess(mp)
-			}}, // TODO
 			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, BACKOFF, FATAL)
 				pm.printTransition(mp.Num, BACKOFF, FATAL)
@@ -131,11 +126,6 @@ func newTransitions() *map[State]map[Event]Transition {
 				pm.printTransition(mp.Num, EXITED, STARTING)
 				return pm.startProcess(mp)
 			}},
-			STOP: {To: STOPPED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, EXITED, STOPPED)
-				pm.printTransition(mp.Num, EXITED, STOPPED)
-				return pm.stopProcess(mp)
-			}}, // TODO
 		},
 		FATAL: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
@@ -205,7 +195,6 @@ func (pm *ProgramManager) restartProcess(mp *ManagedProcess) Event {
 	}
 
 	mp.RestartCount++
-
 	mp.NextRestartTime = time.Now().Add(time.Duration(mp.RestartCount) * time.Second)
 
 	return ""
@@ -265,11 +254,10 @@ func (pm *ProgramManager) Run() error {
 			select {
 			case <-pm.StopChan:
 				for _, mp := range pm.Processes {
-					if mp.State != STOPPED && mp.State != STOPPING {
+					if mp.State == RUNNING || mp.State == STARTING {
 						pm.sendEvent(STOP, mp)
 					}
 				}
-
 				return nil
 			case exitInfo := <-mp.ExitChan:
 				mp.ExitTime = exitInfo.ExitTime

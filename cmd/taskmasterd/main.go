@@ -13,6 +13,11 @@ import (
 var ctx config.Context
 
 func init() {
+	if euid := os.Geteuid(); euid != 0 {
+		fmt.Fprintln(os.Stderr, "Error: can't drop privileges as nonroot user")
+		os.Exit(1)
+	}
+
 	const (
 		configDefault      = ""
 		configUsage        = "The path to a taskmasterd configuration file."
@@ -46,11 +51,6 @@ func init() {
 }
 
 func main() {
-	if euid := os.Geteuid(); euid != 0 {
-		fmt.Fprintln(os.Stderr, "Error: can't drop privileges as nonroot user")
-		os.Exit(1)
-	}
-
 	flag.Parse()
 
 	config, err := config.Parse(&ctx)
