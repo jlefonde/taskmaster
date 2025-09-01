@@ -23,5 +23,6 @@ programs:
     #         ANSWER: 42
     #     stderr_logfile: auto
     test:
-        cmd: "unknown_command"
+        cmd: echo "test"
         numprocs: 2
+        exitcodes: 1

@@ -48,13 +48,18 @@ type Transition struct {
 }
 
 type ManagedProcess struct {
-	Num          int
-	Cmd          *exec.Cmd
-	State        State
-	StartTime    time.Time
-	ExitTime     time.Time
-	RestartCount int
-	ExitChan     chan ProcessExitInfo
+	Num             int
+	Cmd             *exec.Cmd
+	State           State
+	StartTime       time.Time
+	ExitTime        time.Time
+	NextRestartTime time.Time
+	RestartCount    int
+	ExitChan        chan ProcessExitInfo
+	Stdout          *os.File
+	Stderr          *os.File
+	StdoutLogFile   string
+	StderrLogFile   string
 }
 
 type ProgramManager struct {
@@ -69,14 +74,15 @@ type ProgramManager struct {
 func (pm *ProgramManager) startCmd(processName string) Event {
 	mp := pm.Processes[processName]
 
-	var cmd *exec.Cmd = mp.Cmd
-	if cmd == nil {
-		var err error
-		cmd, err = pm.newCmd(mp.Num)
-		if err != nil {
-			pm.Log.Warningf("prepare cmd failed for program '%s' (process %d): %v", pm.Name, mp.Num, err)
-			return PROCESS_EXITED
-		}
+	if err := mp.setProcessStdLogs(pm); err != nil {
+		pm.Log.Warningf("failed to set logs file for program '%s' (process %d): %v", pm.Name, mp.Num, err)
+		return PROCESS_EXITED
+	}
+
+	cmd, err := mp.newCmd(pm.Config)
+	if err != nil {
+		pm.Log.Warningf("prepare cmd failed for program '%s' (process %d): %v", pm.Name, mp.Num, err)
+		return PROCESS_EXITED
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -102,11 +108,9 @@ func (pm *ProgramManager) restartCmd(processName string) Event {
 
 	mp.RestartCount++
 
-	delay := time.Duration(mp.RestartCount) * time.Second
-	fmt.Printf("Restarting process '%s' in %v seconds (attempt %d)\n", processName, delay, mp.RestartCount)
-	time.Sleep(delay)
+	mp.NextRestartTime = time.Now().Add(time.Duration(mp.RestartCount) * time.Second)
 
-	return START
+	return ""
 }
 
 func newTransitions() *map[State]map[Event]Transition {
@@ -120,6 +124,7 @@ func newTransitions() *map[State]map[Event]Transition {
 		STARTING: {
 			PROCESS_STARTED: {To: RUNNING, Action: func(pm *ProgramManager, processName string) Event {
 				fmt.Println("STARTING -> RUNNING")
+				pm.Processes[processName].RestartCount = 0
 				return ""
 			}},
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, processName string) Event {
@@ -160,7 +165,7 @@ func newTransitions() *map[State]map[Event]Transition {
 		EXITED: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, processName string) Event {
 				fmt.Println("EXITED -> STARTING")
-				return ""
+				return pm.startCmd(processName)
 			}},
 		},
 		FATAL: {
@@ -187,13 +192,13 @@ func NewProgramManager(programName string, programConfig *config.Program, childL
 	return &pm
 }
 
-func (pm *ProgramManager) getDefaultLogFile(outFile string, processNum int) string {
+func (mp *ManagedProcess) getDefaultLogFile(pm *ProgramManager, outFile string) string {
 	const charset string = "abcdefghijklmnopqrstuvwxyz0123456789"
 	const suffixLen int = 8
 
 	num := ""
 	if pm.Config.NumProcs > 1 {
-		num = "_" + fmt.Sprintf("%02d", processNum)
+		num = "_" + fmt.Sprintf("%02d", mp.Num)
 	}
 
 	suffix := make([]byte, suffixLen)
@@ -206,37 +211,39 @@ func (pm *ProgramManager) getDefaultLogFile(outFile string, processNum int) stri
 	return filepath.Join(pm.ChildLogDir, logFileName)
 }
 
-func (pm *ProgramManager) newLogFile(path string, outFile string, processNum int) (*os.File, error) {
+func (mp *ManagedProcess) newLogFile(pm *ProgramManager, path string, outFile string) (*os.File, string, error) {
 	if s.ToUpper(path) != "NONE" {
-
 		if path == "" || s.ToUpper(path) == "AUTO" {
-			path = pm.getDefaultLogFile(outFile, processNum)
+			path = mp.getDefaultLogFile(pm, outFile)
 		}
 
 		logFile, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
 		if err != nil {
-			return nil, fmt.Errorf("open %s failed: %w", outFile, err)
+			return nil, "", fmt.Errorf("open %s failed: %w", outFile, err)
 		}
 
-		return logFile, nil
+		return logFile, path, nil
 	}
 
-	return nil, nil
+	return nil, "", nil
 }
 
-func (pm *ProgramManager) setProcessStdLogs(cmd *exec.Cmd, processNum int) error {
-	stdout, err := pm.newLogFile(pm.Config.StdoutLogFile, "stdout", processNum)
-	if err != nil {
-		return err
+func (mp *ManagedProcess) setProcessStdLogs(pm *ProgramManager) error {
+	var err error
+
+	if mp.StdoutLogFile == "" {
+		mp.Stdout, mp.StdoutLogFile, err = mp.newLogFile(pm, pm.Config.StdoutLogFile, "stdout")
+		if err != nil {
+			return err
+		}
 	}
 
-	stderr, err := pm.newLogFile(pm.Config.StderrLogFile, "stderr", processNum)
-	if err != nil {
-		return err
+	if mp.StderrLogFile == "" {
+		mp.Stderr, mp.StderrLogFile, err = mp.newLogFile(pm, pm.Config.StderrLogFile, "stderr")
+		if err != nil {
+			return err
+		}
 	}
-
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
 
 	return nil
 }
@@ -249,22 +256,22 @@ func (pm *ProgramManager) getProcessName(processNum int) string {
 	return fmt.Sprintf("%s:%s_%02d", pm.Name, pm.Name, processNum)
 }
 
-func (pm *ProgramManager) newCmd(processNum int) (*exec.Cmd, error) {
+func (mp *ManagedProcess) newCmd(config *config.Program) (*exec.Cmd, error) {
 	var cmd *exec.Cmd
-	if pm.Config.Umask != nil {
-		cmd = exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", *pm.Config.Umask, pm.Config.Cmd))
+	if config.Umask != nil {
+		cmd = exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", *config.Umask, config.Cmd))
 	} else {
-		cmd = exec.Command("sh", "-c", pm.Config.Cmd)
+		cmd = exec.Command("sh", "-c", config.Cmd)
 	}
 
 	cmd.Env = os.Environ()
-	for envKey, envVal := range pm.Config.Env {
+	for envKey, envVal := range config.Env {
 		cmd.Env = append(cmd.Env, envKey+"="+envVal)
 	}
 
-	cmd.Dir = pm.Config.WorkingDir
+	cmd.Dir = config.WorkingDir
 
-	user, err := user.Lookup(pm.Config.User)
+	user, err := user.Lookup(config.User)
 	if err != nil {
 		return nil, fmt.Errorf("user lookup failed: %w", err)
 	}
@@ -274,9 +281,8 @@ func (pm *ProgramManager) newCmd(processNum int) (*exec.Cmd, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{}
 	cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
 
-	if err := pm.setProcessStdLogs(cmd, processNum); err != nil {
-		return nil, fmt.Errorf("couldn't set logfile: %w", err)
-	}
+	cmd.Stdout = mp.Stdout
+	cmd.Stderr = mp.Stderr
 
 	return cmd, nil
 }
@@ -302,6 +308,24 @@ func (pm *ProgramManager) sendEvent(event Event, processName string) error {
 	return nil
 }
 
+func (mp *ManagedProcess) isAutoRestart(autoRestart config.AutoRestart, exitCodes []int) bool {
+	switch autoRestart {
+	case config.AUTORESTART_NEVER:
+		return false
+	case config.AUTORESTART_ALWAYS:
+		return true
+	case config.AUTORESTART_ON_FAILURE:
+		for _, exitCode := range exitCodes {
+			if mp.Cmd.ProcessState.ExitCode() == exitCode {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
 func (pm *ProgramManager) Run() error {
 	fmt.Printf("%s: %+v\n\n", pm.Name, pm.Config)
 
@@ -320,11 +344,19 @@ func (pm *ProgramManager) Run() error {
 
 	for {
 		for processName, mp := range pm.Processes {
-			var exitInfo ProcessExitInfo = <-mp.ExitChan
-			mp.ExitTime = exitInfo.ExitTime
-			pm.sendEvent(PROCESS_EXITED, processName)
+			select {
+			case exitInfo := <-mp.ExitChan:
+				mp.ExitTime = exitInfo.ExitTime
+				pm.sendEvent(PROCESS_EXITED, processName)
+			default:
+				if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) {
+					pm.sendEvent(START, processName)
+				} else if mp.State == EXITED && mp.isAutoRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) {
+					pm.sendEvent(START, processName)
+				}
+			}
 		}
 
-		time.Sleep(1 * time.Second)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
