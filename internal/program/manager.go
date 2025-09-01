@@ -47,6 +47,7 @@ type ProgramManager struct {
 	Log         *logger.Logger
 	Processes   map[string]*ManagedProcess
 	Transitions *map[State]map[Event]Transition
+	StopChan    chan struct{}
 }
 
 func NewProgramManager(programName string, programConfig *config.Program, childLogDir string, log *logger.Logger) *ProgramManager {
@@ -57,6 +58,7 @@ func NewProgramManager(programName string, programConfig *config.Program, childL
 		Log:         log,
 		Processes:   make(map[string]*ManagedProcess),
 		Transitions: newTransitions(),
+		StopChan:    make(chan struct{}),
 	}
 }
 
@@ -105,6 +107,11 @@ func newTransitions() *map[State]map[Event]Transition {
 				pm.printTransition(mp.Num, BACKOFF, STARTING)
 				return pm.startProcess(mp)
 			}},
+			STOP: {To: STOPPED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, BACKOFF, STOPPED)
+				pm.printTransition(mp.Num, BACKOFF, STOPPED)
+				return pm.stopProcess(mp)
+			}}, // TODO
 			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, BACKOFF, FATAL)
 				pm.printTransition(mp.Num, BACKOFF, FATAL)
@@ -124,6 +131,11 @@ func newTransitions() *map[State]map[Event]Transition {
 				pm.printTransition(mp.Num, EXITED, STARTING)
 				return pm.startProcess(mp)
 			}},
+			STOP: {To: STOPPED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, EXITED, STOPPED)
+				pm.printTransition(mp.Num, EXITED, STOPPED)
+				return pm.stopProcess(mp)
+			}}, // TODO
 		},
 		FATAL: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
@@ -251,6 +263,14 @@ func (pm *ProgramManager) Run() error {
 	for {
 		for _, mp := range pm.Processes {
 			select {
+			case <-pm.StopChan:
+				for _, mp := range pm.Processes {
+					if mp.State != STOPPED && mp.State != STOPPING {
+						pm.sendEvent(STOP, mp)
+					}
+				}
+
+				return nil
 			case exitInfo := <-mp.ExitChan:
 				mp.ExitTime = exitInfo.ExitTime
 				if mp.State == STOPPING {
@@ -273,4 +293,8 @@ func (pm *ProgramManager) Run() error {
 
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+func (pm *ProgramManager) Stop() {
+	close(pm.StopChan)
 }

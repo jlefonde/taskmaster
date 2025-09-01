@@ -3,9 +3,11 @@ package supervisor
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	s "strings"
 	"sync"
+	"syscall"
 
 	"taskmaster/internal/config"
 	"taskmaster/internal/logger"
@@ -44,9 +46,15 @@ func Run(config *config.Config) error {
 	}
 
 	fmt.Printf("taskmaster: %+v\n\n", config.Taskmasterd)
+
+	quitSigs := make(chan os.Signal, 1)
+	signal.Notify(quitSigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
+	programManagers := make(map[string]*program.ProgramManager)
+
 	var wg sync.WaitGroup
 	for programName, programConfig := range config.Programs {
-		programManager := program.NewProgramManager(programName, &programConfig, config.Taskmasterd.ChildLogDir, log)
+		programManagers[programName] = program.NewProgramManager(programName, &programConfig, config.Taskmasterd.ChildLogDir, log)
 
 		wg.Add(1)
 		go func(pm *program.ProgramManager) {
@@ -55,8 +63,20 @@ func Run(config *config.Config) error {
 			if err := pm.Run(); err != nil {
 				log.Warningf("program '%s' failed: %v", pm.Name, err)
 			}
-		}(programManager)
+		}(programManagers[programName])
 	}
+
+	go func() {
+		sig := <-quitSigs
+		fmt.Println()
+		fmt.Println(sig)
+		for _, pm := range programManagers {
+			go func(pm *program.ProgramManager) {
+				log.Debugf("Stopping program manager: %s", pm.Name)
+				pm.Stop()
+			}(pm)
+		}
+	}()
 
 	wg.Wait()
 
