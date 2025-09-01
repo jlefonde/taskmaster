@@ -118,6 +118,14 @@ func (mp *ManagedProcess) newCmd(config *config.Program) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
+func (mp *ManagedProcess) hasStarted(startSecs int) bool {
+	return time.Now().After(mp.StartTime.Add(time.Duration(startSecs) * time.Second))
+}
+
+func (mp *ManagedProcess) hasStopped(stopSecs int) bool {
+	return time.Now().After(mp.StopTime.Add(time.Duration(stopSecs) * time.Second))
+}
+
 func (mp *ManagedProcess) shouldRestart(autoRestart config.AutoRestart, exitCodes []int) bool {
 	switch autoRestart {
 	case config.AUTORESTART_NEVER:

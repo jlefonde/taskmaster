@@ -5,24 +5,24 @@ taskmasterd:
     logfile: /var/log/taskmasterd/taskmasterd.log
     loglevel: error
 programs:
-    # test:
-    #     cmd: echo "test"
-    #     numprocs: 2
-    #     autostart: true
-    #     autorestart: always
-    #     exitcodes:
-    #         - 0
-    #         - 2
-    #     startretries: 3
-    #     startsecs: 5
-    #     stopsignal: 34
-    #     stopsecs: 10
-    #     user: jlefonde
-    #     env:
-    #         STARTED_BY: taskmaster
-    #         ANSWER: 42
-    #     stderr_logfile: auto
-    test:
+    tail:
+        cmd: tail -f
+        numprocs: 2
+        autostart: true
+        autorestart: always
+        exitcodes:
+            - 0
+            - 2
+        startretries: 3
+        startsecs: 5
+        stopsignal: 34
+        stopsecs: 10
+        user: jlefonde
+        env:
+            STARTED_BY: taskmaster
+            ANSWER: 42
+        stderr_logfile: auto
+    echo:
         cmd: echo "test"
         exitcodes: 1
         startsecs: 0

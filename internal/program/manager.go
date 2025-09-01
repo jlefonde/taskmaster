@@ -3,7 +3,6 @@ package program
 import (
 	"fmt"
 	"os/exec"
-	"syscall"
 	"time"
 
 	"taskmaster/internal/config"
@@ -205,7 +204,7 @@ func (pm *ProgramManager) stopProcess(mp *ManagedProcess) Event {
 		return PROCESS_STOPPED
 	}
 
-	if err := syscall.Kill(mp.Cmd.Process.Pid, pm.Config.StopSignal); err != nil {
+	if err := mp.Cmd.Process.Signal(pm.Config.StopSignal); err != nil {
 		pm.Log.Warningf("failed to send stop signal to process %d: %v", mp.Cmd.Process.Pid, err)
 		return PROCESS_STOPPED
 	}
@@ -220,6 +219,17 @@ func (pm *ProgramManager) logTransition(processNum int, from State, to State) {
 
 func (pm *ProgramManager) printTransition(processNum int, from State, to State) {
 	fmt.Printf("%s %s -> %s\n", pm.getProcessName(processNum), from, to)
+}
+
+func (pm *ProgramManager) forceStop(mp *ManagedProcess) {
+	if mp.Cmd == nil || mp.Cmd.Process == nil {
+		pm.sendEvent(PROCESS_STOPPED, mp)
+	}
+
+	pm.Log.Warningf("process %d did not stop gracefully, sending SIGKILL", mp.Cmd.Process.Pid)
+	if err := mp.Cmd.Process.Kill(); err != nil {
+		pm.Log.Errorf("failed to SIGKILL process %d: %v", mp.Cmd.Process.Pid, err)
+	}
 }
 
 func (pm *ProgramManager) Run() error {
@@ -249,16 +259,13 @@ func (pm *ProgramManager) Run() error {
 					pm.sendEvent(PROCESS_EXITED, mp)
 				}
 			default:
-				if mp.State == STARTING && time.Now().After(mp.StartTime.Add(time.Duration(pm.Config.StartSecs)*time.Second)) {
+				if mp.State == STARTING && mp.hasStarted(pm.Config.StartSecs) {
 					pm.sendEvent(PROCESS_STARTED, mp)
-				} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) {
-					pm.sendEvent(START, mp)
-				} else if mp.State == STOPPING && time.Now().After(mp.StopTime.Add(time.Duration(pm.Config.StopSecs)*time.Second)) {
-					pm.Log.Warningf("process %d did not stop gracefully, sending SIGKILL", mp.Cmd.Process.Pid)
-					if err := syscall.Kill(mp.Cmd.Process.Pid, syscall.SIGKILL); err != nil {
-						pm.Log.Errorf("failed to SIGKILL process %d: %v", mp.Cmd.Process.Pid, err)
-					}
+				} else if mp.State == STOPPING && !mp.hasStopped(pm.Config.StopSecs) {
+					pm.forceStop(mp)
 				} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) {
+					pm.sendEvent(START, mp)
+				} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) {
 					pm.sendEvent(START, mp)
 				}
 			}
