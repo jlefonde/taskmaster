@@ -24,3 +24,5 @@ programs:
     #     stderr_logfile: auto
     test:
         cmd: echo "test"
+        exitcodes: 1
+        startsecs: 0

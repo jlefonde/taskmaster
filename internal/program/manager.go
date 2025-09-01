@@ -94,6 +94,10 @@ func (pm *ProgramManager) startCmd(mp *ManagedProcess) Event {
 		mp.ExitChan <- ProcessExitInfo{ExitTime: time.Now(), Err: cmd.Wait()}
 	}(cmd)
 
+	if pm.Config.StartSecs == 0 {
+		return PROCESS_STARTED
+	}
+
 	return ""
 }
 
@@ -109,64 +113,83 @@ func (pm *ProgramManager) restartCmd(mp *ManagedProcess) Event {
 	return ""
 }
 
+func (pm *ProgramManager) logTransition(processNum int, from State, to State) {
+	pm.Log.Infof("%s:%s_%02d %s -> %s\n", pm.Name, pm.Name, processNum, from, to)
+}
+
+func (pm *ProgramManager) printTransition(processNum int, from State, to State) {
+	fmt.Printf("%s:%s_%02d %s -> %s\n", pm.Name, pm.Name, processNum, from, to)
+}
+
 func newTransitions() *map[State]map[Event]Transition {
 	return &map[State]map[Event]Transition{
 		STOPPED: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				fmt.Println("STOPPED -> STARTING")
+				pm.logTransition(mp.Num, STOPPED, STARTING)
+				pm.printTransition(mp.Num, STOPPED, STARTING)
 				return pm.startCmd(mp)
 			}},
 		},
 		STARTING: {
 			PROCESS_STARTED: {To: RUNNING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				fmt.Println("STARTING -> RUNNING")
+				pm.logTransition(mp.Num, STARTING, RUNNING)
+				pm.printTransition(mp.Num, STARTING, RUNNING)
 				mp.RestartCount = 0
 				return ""
 			}},
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				fmt.Println("STARTING -> STOPPING")
+				pm.logTransition(mp.Num, STARTING, STOPPING)
+				pm.printTransition(mp.Num, STARTING, STOPPING)
 				return ""
 			}},
 			PROCESS_EXITED: {To: BACKOFF, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				fmt.Println("STARTING -> BACKOFF")
+				pm.logTransition(mp.Num, STARTING, BACKOFF)
+				pm.printTransition(mp.Num, STARTING, BACKOFF)
 				return pm.restartCmd(mp)
 			}},
 		},
 		RUNNING: {
 			PROCESS_EXITED: {To: EXITED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				fmt.Println("RUNNING -> EXITED")
+				pm.logTransition(mp.Num, RUNNING, EXITED)
+				pm.printTransition(mp.Num, RUNNING, EXITED)
 				return ""
 			}},
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				fmt.Println("RUNNING -> STOPPING")
+				pm.logTransition(mp.Num, RUNNING, STOPPING)
+				pm.printTransition(mp.Num, RUNNING, STOPPING)
 				return ""
 			}},
 		},
 		BACKOFF: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				fmt.Println("BACKOFF -> STARTING")
+				pm.logTransition(mp.Num, BACKOFF, STARTING)
+				pm.printTransition(mp.Num, BACKOFF, STARTING)
 				return pm.startCmd(mp)
 			}},
 			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				fmt.Println("BACKOFF -> FATAL")
+				pm.logTransition(mp.Num, BACKOFF, FATAL)
+				pm.printTransition(mp.Num, BACKOFF, FATAL)
 				return ""
 			}},
 		},
 		STOPPING: {
 			PROCESS_STOPPED: {To: STOPPED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				fmt.Println("STOPPING -> STOPPED")
+				pm.logTransition(mp.Num, STOPPING, STOPPED)
+				pm.printTransition(mp.Num, STOPPING, STOPPED)
 				return ""
 			}},
 		},
 		EXITED: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				fmt.Println("EXITED -> STARTING")
+				pm.logTransition(mp.Num, EXITED, STARTING)
+				pm.printTransition(mp.Num, EXITED, STARTING)
 				return pm.startCmd(mp)
 			}},
 		},
 		FATAL: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				fmt.Println("FATAL -> STARTING")
+				pm.logTransition(mp.Num, FATAL, STARTING)
+				pm.printTransition(mp.Num, FATAL, STARTING)
 				return ""
 			}},
 		},
@@ -284,8 +307,6 @@ func (pm *ProgramManager) sendEvent(event Event, mp *ManagedProcess) error {
 	if !found {
 		return fmt.Errorf("invalid event '%q' for state '%q'", event, mp.State)
 	}
-
-	// fmt.Printf("process_%02d: %+v\n", mp.Num, pm.Processes[processName])
 
 	mp.State = transition.To
 	if event := transition.Action(pm, mp); event != "" {
