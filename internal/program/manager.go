@@ -3,6 +3,7 @@ package program
 import (
 	"fmt"
 	"os/exec"
+	"syscall"
 	"time"
 
 	"taskmaster/internal/config"
@@ -66,7 +67,7 @@ func newTransitions() *map[State]map[Event]Transition {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, STOPPED, STARTING)
 				pm.printTransition(mp.Num, STOPPED, STARTING)
-				return pm.startCmd(mp)
+				return pm.startProcess(mp)
 			}},
 		},
 		STARTING: {
@@ -79,12 +80,12 @@ func newTransitions() *map[State]map[Event]Transition {
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, STARTING, STOPPING)
 				pm.printTransition(mp.Num, STARTING, STOPPING)
-				return ""
+				return pm.stopProcess(mp)
 			}},
 			PROCESS_EXITED: {To: BACKOFF, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, STARTING, BACKOFF)
 				pm.printTransition(mp.Num, STARTING, BACKOFF)
-				return pm.restartCmd(mp)
+				return pm.restartProcess(mp)
 			}},
 		},
 		RUNNING: {
@@ -96,14 +97,14 @@ func newTransitions() *map[State]map[Event]Transition {
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, RUNNING, STOPPING)
 				pm.printTransition(mp.Num, RUNNING, STOPPING)
-				return ""
+				return pm.stopProcess(mp)
 			}},
 		},
 		BACKOFF: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, BACKOFF, STARTING)
 				pm.printTransition(mp.Num, BACKOFF, STARTING)
-				return pm.startCmd(mp)
+				return pm.startProcess(mp)
 			}},
 			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, BACKOFF, FATAL)
@@ -122,7 +123,7 @@ func newTransitions() *map[State]map[Event]Transition {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, EXITED, STARTING)
 				pm.printTransition(mp.Num, EXITED, STARTING)
-				return pm.startCmd(mp)
+				return pm.startProcess(mp)
 			}},
 		},
 		FATAL: {
@@ -157,7 +158,7 @@ func (pm *ProgramManager) sendEvent(event Event, mp *ManagedProcess) error {
 	return nil
 }
 
-func (pm *ProgramManager) startCmd(mp *ManagedProcess) Event {
+func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
 	if err := mp.setProcessStdLogs(pm); err != nil {
 		pm.Log.Warningf("failed to set logs file for program '%s' (process %d): %v", pm.Name, mp.Num, err)
 		return PROCESS_EXITED
@@ -187,7 +188,7 @@ func (pm *ProgramManager) startCmd(mp *ManagedProcess) Event {
 	return ""
 }
 
-func (pm *ProgramManager) restartCmd(mp *ManagedProcess) Event {
+func (pm *ProgramManager) restartProcess(mp *ManagedProcess) Event {
 	if pm.Config.AutoRestart == config.AUTORESTART_NEVER || mp.RestartCount >= pm.Config.StartRetries {
 		return TIMEOUT
 	}
@@ -196,6 +197,20 @@ func (pm *ProgramManager) restartCmd(mp *ManagedProcess) Event {
 
 	mp.NextRestartTime = time.Now().Add(time.Duration(mp.RestartCount) * time.Second)
 
+	return ""
+}
+
+func (pm *ProgramManager) stopProcess(mp *ManagedProcess) Event {
+	if mp.Cmd == nil || mp.Cmd.Process == nil {
+		return PROCESS_STOPPED
+	}
+
+	if err := syscall.Kill(mp.Cmd.Process.Pid, pm.Config.StopSignal); err != nil {
+		pm.Log.Warningf("failed to send stop signal to process %d: %v", mp.Cmd.Process.Pid, err)
+		return PROCESS_STOPPED
+	}
+
+	mp.StopTime = time.Now()
 	return ""
 }
 
@@ -228,12 +243,21 @@ func (pm *ProgramManager) Run() error {
 			select {
 			case exitInfo := <-mp.ExitChan:
 				mp.ExitTime = exitInfo.ExitTime
-				pm.sendEvent(PROCESS_EXITED, mp)
+				if mp.State == STOPPING {
+					pm.sendEvent(PROCESS_STOPPED, mp)
+				} else {
+					pm.sendEvent(PROCESS_EXITED, mp)
+				}
 			default:
 				if mp.State == STARTING && time.Now().After(mp.StartTime.Add(time.Duration(pm.Config.StartSecs)*time.Second)) {
 					pm.sendEvent(PROCESS_STARTED, mp)
 				} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) {
 					pm.sendEvent(START, mp)
+				} else if mp.State == STOPPING && time.Now().After(mp.StopTime.Add(time.Duration(pm.Config.StopSecs)*time.Second)) {
+					pm.Log.Warningf("process %d did not stop gracefully, sending SIGKILL", mp.Cmd.Process.Pid)
+					if err := syscall.Kill(mp.Cmd.Process.Pid, syscall.SIGKILL); err != nil {
+						pm.Log.Errorf("failed to SIGKILL process %d: %v", mp.Cmd.Process.Pid, err)
+					}
 				} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) {
 					pm.sendEvent(START, mp)
 				}

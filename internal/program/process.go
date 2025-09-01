@@ -20,6 +20,7 @@ type ManagedProcess struct {
 	Cmd             *exec.Cmd
 	State           State
 	StartTime       time.Time
+	StopTime        time.Time
 	ExitTime        time.Time
 	NextRestartTime time.Time
 	RestartCount    int
