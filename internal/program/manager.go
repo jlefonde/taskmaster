@@ -44,7 +44,7 @@ type ProcessExitInfo struct {
 
 type Transition struct {
 	To     State
-	Action func(pm *ProgramManager, processName string) Event
+	Action func(pm *ProgramManager, mp *ManagedProcess) Event
 }
 
 type ManagedProcess struct {
@@ -71,9 +71,7 @@ type ProgramManager struct {
 	Transitions *map[State]map[Event]Transition
 }
 
-func (pm *ProgramManager) startCmd(processName string) Event {
-	mp := pm.Processes[processName]
-
+func (pm *ProgramManager) startCmd(mp *ManagedProcess) Event {
 	if err := mp.setProcessStdLogs(pm); err != nil {
 		pm.Log.Warningf("failed to set logs file for program '%s' (process %d): %v", pm.Name, mp.Num, err)
 		return PROCESS_EXITED
@@ -96,12 +94,10 @@ func (pm *ProgramManager) startCmd(processName string) Event {
 		mp.ExitChan <- ProcessExitInfo{ExitTime: time.Now(), Err: cmd.Wait()}
 	}(cmd)
 
-	return PROCESS_STARTED
+	return ""
 }
 
-func (pm *ProgramManager) restartCmd(processName string) Event {
-	mp := pm.Processes[processName]
-
+func (pm *ProgramManager) restartCmd(mp *ManagedProcess) Event {
 	if pm.Config.AutoRestart == config.AUTORESTART_NEVER || mp.RestartCount >= pm.Config.StartRetries {
 		return TIMEOUT
 	}
@@ -114,73 +110,71 @@ func (pm *ProgramManager) restartCmd(processName string) Event {
 }
 
 func newTransitions() *map[State]map[Event]Transition {
-	transitionGraph := map[State]map[Event]Transition{
+	return &map[State]map[Event]Transition{
 		STOPPED: {
-			START: {To: STARTING, Action: func(pm *ProgramManager, processName string) Event {
+			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				fmt.Println("STOPPED -> STARTING")
-				return pm.startCmd(processName)
+				return pm.startCmd(mp)
 			}},
 		},
 		STARTING: {
-			PROCESS_STARTED: {To: RUNNING, Action: func(pm *ProgramManager, processName string) Event {
+			PROCESS_STARTED: {To: RUNNING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				fmt.Println("STARTING -> RUNNING")
-				pm.Processes[processName].RestartCount = 0
+				mp.RestartCount = 0
 				return ""
 			}},
-			STOP: {To: STOPPING, Action: func(pm *ProgramManager, processName string) Event {
+			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				fmt.Println("STARTING -> STOPPING")
 				return ""
 			}},
-			PROCESS_EXITED: {To: BACKOFF, Action: func(pm *ProgramManager, processName string) Event {
+			PROCESS_EXITED: {To: BACKOFF, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				fmt.Println("STARTING -> BACKOFF")
-				return pm.restartCmd(processName)
+				return pm.restartCmd(mp)
 			}},
 		},
 		RUNNING: {
-			PROCESS_EXITED: {To: EXITED, Action: func(pm *ProgramManager, processName string) Event {
+			PROCESS_EXITED: {To: EXITED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				fmt.Println("RUNNING -> EXITED")
 				return ""
 			}},
-			STOP: {To: STOPPING, Action: func(pm *ProgramManager, processName string) Event {
+			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				fmt.Println("RUNNING -> STOPPING")
 				return ""
 			}},
 		},
 		BACKOFF: {
-			START: {To: STARTING, Action: func(pm *ProgramManager, processName string) Event {
+			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				fmt.Println("BACKOFF -> STARTING")
-				return pm.startCmd(processName)
+				return pm.startCmd(mp)
 			}},
-			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, processName string) Event {
+			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				fmt.Println("BACKOFF -> FATAL")
 				return ""
 			}},
 		},
 		STOPPING: {
-			PROCESS_STOPPED: {To: STOPPED, Action: func(pm *ProgramManager, processName string) Event {
+			PROCESS_STOPPED: {To: STOPPED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				fmt.Println("STOPPING -> STOPPED")
 				return ""
 			}},
 		},
 		EXITED: {
-			START: {To: STARTING, Action: func(pm *ProgramManager, processName string) Event {
+			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				fmt.Println("EXITED -> STARTING")
-				return pm.startCmd(processName)
+				return pm.startCmd(mp)
 			}},
 		},
 		FATAL: {
-			START: {To: STARTING, Action: func(pm *ProgramManager, processName string) Event {
+			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				fmt.Println("FATAL -> STARTING")
 				return ""
 			}},
 		},
 	}
-
-	return &transitionGraph
 }
 
 func NewProgramManager(programName string, programConfig *config.Program, childLogDir string, log *logger.Logger) *ProgramManager {
-	pm := ProgramManager{
+	return &ProgramManager{
 		Name:        programName,
 		Config:      programConfig,
 		ChildLogDir: childLogDir,
@@ -188,8 +182,6 @@ func NewProgramManager(programName string, programConfig *config.Program, childL
 		Processes:   make(map[string]*ManagedProcess),
 		Transitions: newTransitions(),
 	}
-
-	return &pm
 }
 
 func (mp *ManagedProcess) getDefaultLogFile(pm *ProgramManager, outFile string) string {
@@ -287,12 +279,7 @@ func (mp *ManagedProcess) newCmd(config *config.Program) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-func (pm *ProgramManager) sendEvent(event Event, processName string) error {
-	mp, found := pm.Processes[processName]
-	if !found {
-		return fmt.Errorf("process '%s' not found", processName)
-	}
-
+func (pm *ProgramManager) sendEvent(event Event, mp *ManagedProcess) error {
 	transition, found := (*pm.Transitions)[mp.State][event]
 	if !found {
 		return fmt.Errorf("invalid event '%q' for state '%q'", event, mp.State)
@@ -301,8 +288,8 @@ func (pm *ProgramManager) sendEvent(event Event, processName string) error {
 	// fmt.Printf("process_%02d: %+v\n", mp.Num, pm.Processes[processName])
 
 	mp.State = transition.To
-	if event := transition.Action(pm, processName); event != "" {
-		return pm.sendEvent(event, processName)
+	if event := transition.Action(pm, mp); event != "" {
+		return pm.sendEvent(event, mp)
 	}
 
 	return nil
@@ -338,21 +325,23 @@ func (pm *ProgramManager) Run() error {
 		}
 
 		if pm.Config.AutoStart {
-			go pm.sendEvent(START, processName)
+			pm.sendEvent(START, pm.Processes[processName])
 		}
 	}
 
 	for {
-		for processName, mp := range pm.Processes {
+		for _, mp := range pm.Processes {
 			select {
 			case exitInfo := <-mp.ExitChan:
 				mp.ExitTime = exitInfo.ExitTime
-				pm.sendEvent(PROCESS_EXITED, processName)
+				pm.sendEvent(PROCESS_EXITED, mp)
 			default:
-				if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) {
-					pm.sendEvent(START, processName)
+				if mp.State == STARTING && time.Now().After(mp.StartTime.Add(time.Duration(pm.Config.StartSecs)*time.Second)) {
+					pm.sendEvent(PROCESS_STARTED, mp)
+				} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) {
+					pm.sendEvent(START, mp)
 				} else if mp.State == EXITED && mp.isAutoRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) {
-					pm.sendEvent(START, processName)
+					pm.sendEvent(START, mp)
 				}
 			}
 		}

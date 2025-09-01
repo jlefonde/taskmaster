@@ -24,5 +24,3 @@ programs:
     #     stderr_logfile: auto
     test:
         cmd: echo "test"
-        numprocs: 2
-        exitcodes: 1
