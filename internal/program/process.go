@@ -118,11 +118,11 @@ func (mp *ManagedProcess) newCmd(config *config.Program) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-func (mp *ManagedProcess) hasStarted(startSecs int) bool {
+func (mp *ManagedProcess) hasStartTimeoutExpired(startSecs int) bool {
 	return time.Now().After(mp.StartTime.Add(time.Duration(startSecs) * time.Second))
 }
 
-func (mp *ManagedProcess) hasStopped(stopSecs int) bool {
+func (mp *ManagedProcess) hasStopTimeoutExpired(stopSecs int) bool {
 	return time.Now().After(mp.StopTime.Add(time.Duration(stopSecs) * time.Second))
 }
 

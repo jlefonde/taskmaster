@@ -259,9 +259,9 @@ func (pm *ProgramManager) Run() error {
 					pm.sendEvent(PROCESS_EXITED, mp)
 				}
 			default:
-				if mp.State == STARTING && mp.hasStarted(pm.Config.StartSecs) {
+				if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
 					pm.sendEvent(PROCESS_STARTED, mp)
-				} else if mp.State == STOPPING && !mp.hasStopped(pm.Config.StopSecs) {
+				} else if mp.State == STOPPING && mp.hasStopTimeoutExpired(pm.Config.StopSecs) {
 					pm.forceStop(mp)
 				} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) {
 					pm.sendEvent(START, mp)
