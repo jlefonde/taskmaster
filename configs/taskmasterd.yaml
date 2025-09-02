@@ -26,3 +26,4 @@ programs:
         cmd: echo "test"
         exitcodes: 1
         startsecs: 0
+        autorestart: never

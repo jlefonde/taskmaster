@@ -3,6 +3,7 @@ package program
 import (
 	"fmt"
 	"os/exec"
+	"sync"
 	"time"
 
 	"taskmaster/internal/config"
@@ -249,32 +250,79 @@ func (pm *ProgramManager) Run() error {
 		}
 	}
 
+	exitChan := make(chan struct {
+		mp       *ManagedProcess
+		exitInfo ProcessExitInfo
+	}, len(pm.Processes))
+
+	for _, mp := range pm.Processes {
+		go func(mp *ManagedProcess) {
+			for exitInfo := range mp.ExitChan {
+				exitChan <- struct {
+					mp       *ManagedProcess
+					exitInfo ProcessExitInfo
+				}{mp, exitInfo}
+			}
+		}(mp)
+	}
+
 	for {
-		for _, mp := range pm.Processes {
-			select {
-			case <-pm.StopChan:
-				for _, mp := range pm.Processes {
-					if mp.State == RUNNING || mp.State == STARTING {
-						pm.sendEvent(STOP, mp)
-					}
+		select {
+		case <-pm.StopChan:
+			var wg sync.WaitGroup
+
+			for _, mp := range pm.Processes {
+				if mp.State == RUNNING || mp.State == STARTING {
+					wg.Add(1)
+					go func(pm *ProgramManager, mp *ManagedProcess) {
+						defer wg.Done()
+
+						if err := pm.sendEvent(STOP, mp); err != nil {
+							pm.Log.Warningf("failed to send STOP event to process %d: %v", mp.Num, err)
+						}
+
+						timeout := time.After(time.Duration(pm.Config.StopSecs) * time.Second)
+						for {
+							if mp.State == STOPPED || mp.State == EXITED || mp.State == FATAL {
+								return
+							}
+							select {
+							case <-timeout:
+								pm.forceStop(mp)
+								return
+							default:
+								time.Sleep(100 * time.Millisecond)
+							}
+						}
+					}(pm, mp)
 				}
-				return nil
-			case exitInfo := <-mp.ExitChan:
+			}
+
+			wg.Wait()
+			return nil
+		default:
+			select {
+			case exit := <-exitChan:
+				mp := exit.mp
+				exitInfo := exit.exitInfo
 				mp.ExitTime = exitInfo.ExitTime
+
 				if mp.State == STOPPING {
 					pm.sendEvent(PROCESS_STOPPED, mp)
 				} else {
 					pm.sendEvent(PROCESS_EXITED, mp)
 				}
 			default:
-				if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
-					pm.sendEvent(PROCESS_STARTED, mp)
-				} else if mp.State == STOPPING && mp.hasStopTimeoutExpired(pm.Config.StopSecs) {
-					pm.forceStop(mp)
-				} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) {
-					pm.sendEvent(START, mp)
-				} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) {
-					pm.sendEvent(START, mp)
+				for _, mp := range pm.Processes {
+					if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
+						pm.sendEvent(PROCESS_STARTED, mp)
+					} else if mp.State == STOPPING && mp.hasStopTimeoutExpired(pm.Config.StopSecs) {
+						pm.forceStop(mp)
+					} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) {
+						pm.sendEvent(START, mp)
+					} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) {
+						pm.sendEvent(START, mp)
+					}
 				}
 			}
 		}
