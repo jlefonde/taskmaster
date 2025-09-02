@@ -50,6 +50,7 @@ type ProgramManager struct {
 	Transitions *map[State]map[Event]Transition
 	StopChan    chan struct{}
 	ExitChan    chan ProcessExitEvent
+	Terminating bool
 }
 
 func NewProgramManager(programName string, programConfig *config.Program, childLogDir string, log *logger.Logger) *ProgramManager {
@@ -62,6 +63,7 @@ func NewProgramManager(programName string, programConfig *config.Program, childL
 		Transitions: newTransitions(),
 		StopChan:    make(chan struct{}),
 		ExitChan:    make(chan ProcessExitEvent, programConfig.NumProcs),
+		Terminating: false,
 	}
 }
 
@@ -235,35 +237,12 @@ func (pm *ProgramManager) shutdown() {
 	for _, mp := range pm.Processes {
 		if mp.State == RUNNING || mp.State == STARTING {
 			wg.Add(1)
-			go func(pm *ProgramManager, mp *ManagedProcess) {
+			go func(mp *ManagedProcess) {
 				defer wg.Done()
 
 				pm.Log.Debugf("sending STOP event from %s\n", mp.State)
 				pm.sendEvent(STOP, mp)
-
-				timeout := time.After(time.Duration(pm.Config.StopSecs) * time.Second)
-				for {
-					if mp.State == STOPPED || mp.State == EXITED || mp.State == FATAL {
-						return
-					}
-
-					select {
-					case exit := <-pm.ExitChan:
-						if exit.mp == mp {
-							mp.ExitTime = exit.exitInfo.ExitTime
-							pm.sendEvent(PROCESS_STOPPED, mp)
-							return
-						} else {
-							go func() { pm.ExitChan <- exit }()
-						}
-					case <-timeout:
-						pm.forceStop(mp)
-						return
-					default:
-						time.Sleep(1 * time.Second)
-					}
-				}
-			}(pm, mp)
+			}(mp)
 		}
 	}
 
@@ -280,6 +259,16 @@ func (pm *ProgramManager) forwardExitEvents() {
 			}
 		}(mp)
 	}
+}
+
+func (pm *ProgramManager) allProcessesTerminated() bool {
+	for _, mp := range pm.Processes {
+		if mp.State != STOPPED && mp.State != EXITED && mp.State != BACKOFF && mp.State != FATAL {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (pm *ProgramManager) Run() {
@@ -300,34 +289,42 @@ func (pm *ProgramManager) Run() {
 
 	pm.forwardExitEvents()
 
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-pm.StopChan:
-			pm.shutdown()
-			return
-		default:
-			select {
-			case exit := <-pm.ExitChan:
-				mp := exit.mp
-				mp.ExitTime = exit.exitInfo.ExitTime
+			if !pm.Terminating {
+				pm.Terminating = true
+				go pm.shutdown()
+			}
 
+			if pm.allProcessesTerminated() {
+				return
+			}
+		case exit := <-pm.ExitChan:
+			mp := exit.mp
+			mp.ExitTime = exit.exitInfo.ExitTime
+
+			if mp.State == STOPPING {
+				pm.sendEvent(PROCESS_STOPPED, mp)
+			} else {
 				pm.sendEvent(PROCESS_EXITED, mp)
-			default:
-				for _, mp := range pm.Processes {
-					if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
-						pm.sendEvent(PROCESS_STARTED, mp)
-					} else if mp.State == STOPPING && mp.hasStopTimeoutExpired(pm.Config.StopSecs) {
-						pm.forceStop(mp)
-					} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) {
-						pm.sendEvent(START, mp)
-					} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) {
-						pm.sendEvent(START, mp)
-					}
+			}
+		case <-ticker.C:
+			for _, mp := range pm.Processes {
+				if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
+					pm.sendEvent(PROCESS_STARTED, mp)
+				} else if mp.State == STOPPING && mp.hasStopTimeoutExpired(pm.Config.StopSecs) {
+					pm.forceStop(mp)
+				} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) && !pm.Terminating {
+					pm.sendEvent(START, mp)
+				} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) && !pm.Terminating {
+					pm.sendEvent(START, mp)
 				}
 			}
 		}
-
-		time.Sleep(1 * time.Second)
 	}
 }
 

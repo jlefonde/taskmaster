@@ -7,7 +7,7 @@ taskmasterd:
 programs:
     tail:
         cmd: tail -f
-        numprocs: 1
+        numprocs: 2
         autostart: true
         autorestart: always
         exitcodes:
@@ -16,14 +16,14 @@ programs:
         startretries: 3
         startsecs: 5
         stopsignal: TERM
-        stopsecs: 1
+        stopsecs: 2
         user: jlefonde
         env:
             STARTED_BY: taskmaster
             ANSWER: 42
         stderr_logfile: auto
-    # echo:
-    #     cmd: echo "test"
-    #     exitcodes: 1
-    #     startsecs: 0
-    #     autorestart: never
+    echo:
+        cmd: echo "test"
+        exitcodes: 1
+        startsecs: 1
+        autorestart: never
