@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"taskmaster/internal/config"
 	"taskmaster/internal/logger"
 	"taskmaster/internal/program"
+
+	"github.com/chzyer/readline"
 )
 
 func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
@@ -74,6 +77,38 @@ func Run(config *config.Config) error {
 			}(pm)
 		}
 	}()
+
+	ctl, err := readline.NewEx(&readline.Config{
+		Prompt:            "taskmaster> ",
+		HistoryFile:       "/tmp/readline.tmp",
+		InterruptPrompt:   "^C",
+		EOFPrompt:         "exit",
+		HistorySearchFold: true,
+	})
+	if err != nil {
+		// TODO: handle more gracefully
+		panic(err)
+	}
+
+	defer ctl.Close()
+
+	ctl.CaptureExitSignal()
+
+	for {
+		line, err := ctl.Readline()
+		if err == readline.ErrInterrupt {
+			if len(line) == 0 {
+				break
+			} else {
+				continue
+			}
+		} else if err == io.EOF {
+			break
+		}
+
+		line = s.TrimSpace(line)
+		fmt.Println(line)
+	}
 
 	wg.Wait()
 
