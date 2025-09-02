@@ -171,7 +171,11 @@ func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
 	mp.Cmd = cmd
 
 	go func(cmd *exec.Cmd) {
-		mp.ExitChan <- ProcessExitInfo{ExitTime: time.Now(), Err: cmd.Wait()}
+		exitInfo := ProcessExitInfo{ExitTime: time.Now(), Err: cmd.Wait()}
+		if exitInfo.Err != nil {
+			pm.Log.Warningf("process %d exited with error: %v", cmd.Process.Pid, exitInfo.Err)
+		}
+		mp.ExitChan <- exitInfo
 	}(cmd)
 
 	if pm.Config.StartSecs == 0 {
@@ -234,16 +238,24 @@ func (pm *ProgramManager) shutdown() {
 			go func(pm *ProgramManager, mp *ManagedProcess) {
 				defer wg.Done()
 
-				if err := pm.sendEvent(STOP, mp); err != nil {
-					pm.Log.Warningf("failed to send STOP event to process %d: %v", mp.Num, err)
-				}
+				pm.Log.Debugf("sending STOP event from %s\n", mp.State)
+				pm.sendEvent(STOP, mp)
 
 				timeout := time.After(time.Duration(pm.Config.StopSecs) * time.Second)
 				for {
 					if mp.State == STOPPED || mp.State == EXITED || mp.State == FATAL {
 						return
 					}
+
 					select {
+					case exit := <-pm.ExitChan:
+						if exit.mp == mp {
+							mp.ExitTime = exit.exitInfo.ExitTime
+							pm.sendEvent(PROCESS_STOPPED, mp)
+							return
+						} else {
+							go func() { pm.ExitChan <- exit }()
+						}
 					case <-timeout:
 						pm.forceStop(mp)
 						return

@@ -114,8 +114,11 @@ func (mp *ManagedProcess) newCmd(config *config.Program) (*exec.Cmd, error) {
 
 	uid, _ := strconv.ParseInt(user.Uid, 10, 32)
 	gid, _ := strconv.ParseInt(user.Gid, 10, 32)
-	cmd.SysProcAttr = &syscall.SysProcAttr{}
-	cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)},
+		Setpgid:    true,
+		Pgid:       0,
+	}
 
 	cmd.Stdout = mp.Stdout
 	cmd.Stderr = mp.Stderr
