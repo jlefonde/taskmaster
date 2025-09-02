@@ -3,7 +3,6 @@ package program
 import (
 	"fmt"
 	"os/exec"
-	"sync"
 	"time"
 
 	"taskmaster/internal/config"
@@ -71,59 +70,70 @@ func newTransitions() *map[State]map[Event]Transition {
 	return &map[State]map[Event]Transition{
 		STOPPED: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, STOPPED, STARTING)
 				pm.printTransition(mp.Num, STOPPED, STARTING)
 				return pm.startProcess(mp)
 			}},
 		},
 		STARTING: {
 			PROCESS_STARTED: {To: RUNNING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, STARTING, RUNNING)
 				pm.printTransition(mp.Num, STARTING, RUNNING)
 				mp.RestartCount = 0
 				return ""
 			}},
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, STARTING, STOPPING)
 				pm.printTransition(mp.Num, STARTING, STOPPING)
 				return pm.stopProcess(mp)
 			}},
 			PROCESS_EXITED: {To: BACKOFF, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, STARTING, BACKOFF)
 				pm.printTransition(mp.Num, STARTING, BACKOFF)
 				return pm.restartProcess(mp)
 			}},
 		},
 		RUNNING: {
 			PROCESS_EXITED: {To: EXITED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, RUNNING, EXITED)
 				pm.printTransition(mp.Num, RUNNING, EXITED)
 				return ""
 			}},
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, RUNNING, STOPPING)
 				pm.printTransition(mp.Num, RUNNING, STOPPING)
 				return pm.stopProcess(mp)
 			}},
 		},
 		BACKOFF: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, BACKOFF, STARTING)
 				pm.printTransition(mp.Num, BACKOFF, STARTING)
 				return pm.startProcess(mp)
 			}},
 			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, BACKOFF, FATAL)
 				pm.printTransition(mp.Num, BACKOFF, FATAL)
 				return ""
 			}},
 		},
 		STOPPING: {
 			PROCESS_STOPPED: {To: STOPPED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, STOPPING, STOPPED)
 				pm.printTransition(mp.Num, STOPPING, STOPPED)
 				return ""
 			}},
 		},
 		EXITED: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, EXITED, STARTING)
 				pm.printTransition(mp.Num, EXITED, STARTING)
 				return pm.startProcess(mp)
 			}},
 		},
 		FATAL: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, FATAL, STARTING)
 				pm.printTransition(mp.Num, FATAL, STARTING)
 				return ""
 			}},
@@ -231,24 +241,6 @@ func (pm *ProgramManager) forceStop(mp *ManagedProcess) {
 	}
 }
 
-func (pm *ProgramManager) shutdown() {
-	var wg sync.WaitGroup
-
-	for _, mp := range pm.Processes {
-		if mp.State == RUNNING || mp.State == STARTING {
-			wg.Add(1)
-			go func(mp *ManagedProcess) {
-				defer wg.Done()
-
-				pm.Log.Debugf("sending STOP event from %s\n", mp.State)
-				pm.sendEvent(STOP, mp)
-			}(mp)
-		}
-	}
-
-	wg.Wait()
-}
-
 func (pm *ProgramManager) forwardExitEvents() {
 	for _, mp := range pm.Processes {
 		go func(mp *ManagedProcess) {
@@ -258,6 +250,17 @@ func (pm *ProgramManager) forwardExitEvents() {
 				exitInfo: exitInfo,
 			}
 		}(mp)
+	}
+}
+
+func (pm *ProgramManager) initiateShutdown() {
+	if !pm.Terminating {
+		pm.Terminating = true
+		for _, mp := range pm.Processes {
+			if mp.State == RUNNING || mp.State == STARTING {
+				pm.sendEvent(STOP, mp)
+			}
+		}
 	}
 }
 
@@ -295,10 +298,7 @@ func (pm *ProgramManager) Run() {
 	for {
 		select {
 		case <-pm.StopChan:
-			if !pm.Terminating {
-				pm.Terminating = true
-				go pm.shutdown()
-			}
+			pm.initiateShutdown()
 
 			if pm.allProcessesTerminated() {
 				return

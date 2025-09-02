@@ -25,7 +25,8 @@ type Logger struct {
 }
 
 func CreateLogger(LogFilePath string, logLevel LogLevel) (*Logger, error) {
-	LogFile, err := os.OpenFile(LogFilePath, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	// TODO: replace os.O_TRUNC by os.O_APPEND
+	LogFile, err := os.OpenFile(LogFilePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("open logfile failed: %w", err)
 	}
