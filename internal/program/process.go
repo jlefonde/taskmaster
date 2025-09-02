@@ -117,7 +117,6 @@ func (mp *ManagedProcess) newCmd(config *config.Program) (*exec.Cmd, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)},
 		Setpgid:    true,
-		Pgid:       0,
 	}
 
 	cmd.Stdout = mp.Stdout

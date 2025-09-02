@@ -3,6 +3,7 @@ package program
 import (
 	"fmt"
 	"os/exec"
+	"syscall"
 	"time"
 
 	"taskmaster/internal/config"
@@ -202,7 +203,8 @@ func (pm *ProgramManager) stopProcess(mp *ManagedProcess) Event {
 		return PROCESS_STOPPED
 	}
 
-	if err := mp.Cmd.Process.Signal(pm.Config.StopSignal); err != nil {
+	pgid := mp.Cmd.Process.Pid
+	if err := syscall.Kill(-pgid, pm.Config.StopSignal); err != nil {
 		pm.Log.Warningf("failed to send stop signal to process %d: %v", mp.Cmd.Process.Pid, err)
 		return PROCESS_STOPPED
 	}
@@ -221,7 +223,8 @@ func (pm *ProgramManager) forceStop(mp *ManagedProcess) {
 	}
 
 	pm.Log.Warningf("process %d did not stop gracefully, sending SIGKILL", mp.Cmd.Process.Pid)
-	if err := mp.Cmd.Process.Kill(); err != nil {
+	pgid := mp.Cmd.Process.Pid
+	if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
 		pm.Log.Errorf("failed to SIGKILL process %d: %v", mp.Cmd.Process.Pid, err)
 	}
 }
