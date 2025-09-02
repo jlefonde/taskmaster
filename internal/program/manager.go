@@ -31,9 +31,9 @@ const (
 	TIMEOUT         Event = "TIMEOUT"
 )
 
-type ProcessExitInfo struct {
-	ExitTime time.Time
-	Err      error
+type ProcessExitEvent struct {
+	mp       *ManagedProcess
+	exitInfo ProcessExitInfo
 }
 
 type Transition struct {
@@ -49,6 +49,7 @@ type ProgramManager struct {
 	Processes   map[string]*ManagedProcess
 	Transitions *map[State]map[Event]Transition
 	StopChan    chan struct{}
+	ExitChan    chan ProcessExitEvent
 }
 
 func NewProgramManager(programName string, programConfig *config.Program, childLogDir string, log *logger.Logger) *ProgramManager {
@@ -60,6 +61,7 @@ func NewProgramManager(programName string, programConfig *config.Program, childL
 		Processes:   make(map[string]*ManagedProcess),
 		Transitions: newTransitions(),
 		StopChan:    make(chan struct{}),
+		ExitChan:    make(chan ProcessExitEvent, programConfig.NumProcs),
 	}
 }
 
@@ -67,70 +69,59 @@ func newTransitions() *map[State]map[Event]Transition {
 	return &map[State]map[Event]Transition{
 		STOPPED: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, STOPPED, STARTING)
 				pm.printTransition(mp.Num, STOPPED, STARTING)
 				return pm.startProcess(mp)
 			}},
 		},
 		STARTING: {
 			PROCESS_STARTED: {To: RUNNING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, STARTING, RUNNING)
 				pm.printTransition(mp.Num, STARTING, RUNNING)
 				mp.RestartCount = 0
 				return ""
 			}},
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, STARTING, STOPPING)
 				pm.printTransition(mp.Num, STARTING, STOPPING)
 				return pm.stopProcess(mp)
 			}},
 			PROCESS_EXITED: {To: BACKOFF, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, STARTING, BACKOFF)
 				pm.printTransition(mp.Num, STARTING, BACKOFF)
 				return pm.restartProcess(mp)
 			}},
 		},
 		RUNNING: {
 			PROCESS_EXITED: {To: EXITED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, RUNNING, EXITED)
 				pm.printTransition(mp.Num, RUNNING, EXITED)
 				return ""
 			}},
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, RUNNING, STOPPING)
 				pm.printTransition(mp.Num, RUNNING, STOPPING)
 				return pm.stopProcess(mp)
 			}},
 		},
 		BACKOFF: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, BACKOFF, STARTING)
 				pm.printTransition(mp.Num, BACKOFF, STARTING)
 				return pm.startProcess(mp)
 			}},
 			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, BACKOFF, FATAL)
 				pm.printTransition(mp.Num, BACKOFF, FATAL)
 				return ""
 			}},
 		},
 		STOPPING: {
 			PROCESS_STOPPED: {To: STOPPED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, STOPPING, STOPPED)
 				pm.printTransition(mp.Num, STOPPING, STOPPED)
 				return ""
 			}},
 		},
 		EXITED: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, EXITED, STARTING)
 				pm.printTransition(mp.Num, EXITED, STARTING)
 				return pm.startProcess(mp)
 			}},
 		},
 		FATAL: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, FATAL, STARTING)
 				pm.printTransition(mp.Num, FATAL, STARTING)
 				return ""
 			}},
@@ -234,7 +225,52 @@ func (pm *ProgramManager) forceStop(mp *ManagedProcess) {
 	}
 }
 
-func (pm *ProgramManager) Run() error {
+func (pm *ProgramManager) shutdown() {
+	var wg sync.WaitGroup
+
+	for _, mp := range pm.Processes {
+		if mp.State == RUNNING || mp.State == STARTING {
+			wg.Add(1)
+			go func(pm *ProgramManager, mp *ManagedProcess) {
+				defer wg.Done()
+
+				if err := pm.sendEvent(STOP, mp); err != nil {
+					pm.Log.Warningf("failed to send STOP event to process %d: %v", mp.Num, err)
+				}
+
+				timeout := time.After(time.Duration(pm.Config.StopSecs) * time.Second)
+				for {
+					if mp.State == STOPPED || mp.State == EXITED || mp.State == FATAL {
+						return
+					}
+					select {
+					case <-timeout:
+						pm.forceStop(mp)
+						return
+					default:
+						time.Sleep(1 * time.Second)
+					}
+				}
+			}(pm, mp)
+		}
+	}
+
+	wg.Wait()
+}
+
+func (pm *ProgramManager) forwardExitEvents() {
+	for _, mp := range pm.Processes {
+		go func(mp *ManagedProcess) {
+			exitInfo := <-mp.ExitChan
+			pm.ExitChan <- ProcessExitEvent{
+				mp:       mp,
+				exitInfo: exitInfo,
+			}
+		}(mp)
+	}
+}
+
+func (pm *ProgramManager) Run() {
 	fmt.Printf("%s: %+v\n\n", pm.Name, pm.Config)
 
 	for processNum := range pm.Config.NumProcs {
@@ -242,7 +278,7 @@ func (pm *ProgramManager) Run() error {
 		pm.Processes[processName] = &ManagedProcess{
 			Num:      processNum,
 			State:    STOPPED,
-			ExitChan: make(chan ProcessExitInfo, 1),
+			ExitChan: make(chan ProcessExitInfo),
 		}
 
 		if pm.Config.AutoStart {
@@ -250,68 +286,20 @@ func (pm *ProgramManager) Run() error {
 		}
 	}
 
-	exitChan := make(chan struct {
-		mp       *ManagedProcess
-		exitInfo ProcessExitInfo
-	}, len(pm.Processes))
-
-	for _, mp := range pm.Processes {
-		go func(mp *ManagedProcess) {
-			for exitInfo := range mp.ExitChan {
-				exitChan <- struct {
-					mp       *ManagedProcess
-					exitInfo ProcessExitInfo
-				}{mp, exitInfo}
-			}
-		}(mp)
-	}
+	pm.forwardExitEvents()
 
 	for {
 		select {
 		case <-pm.StopChan:
-			var wg sync.WaitGroup
-
-			for _, mp := range pm.Processes {
-				if mp.State == RUNNING || mp.State == STARTING {
-					wg.Add(1)
-					go func(pm *ProgramManager, mp *ManagedProcess) {
-						defer wg.Done()
-
-						if err := pm.sendEvent(STOP, mp); err != nil {
-							pm.Log.Warningf("failed to send STOP event to process %d: %v", mp.Num, err)
-						}
-
-						timeout := time.After(time.Duration(pm.Config.StopSecs) * time.Second)
-						for {
-							if mp.State == STOPPED || mp.State == EXITED || mp.State == FATAL {
-								return
-							}
-							select {
-							case <-timeout:
-								pm.forceStop(mp)
-								return
-							default:
-								time.Sleep(100 * time.Millisecond)
-							}
-						}
-					}(pm, mp)
-				}
-			}
-
-			wg.Wait()
-			return nil
+			pm.shutdown()
+			return
 		default:
 			select {
-			case exit := <-exitChan:
+			case exit := <-pm.ExitChan:
 				mp := exit.mp
-				exitInfo := exit.exitInfo
-				mp.ExitTime = exitInfo.ExitTime
+				mp.ExitTime = exit.exitInfo.ExitTime
 
-				if mp.State == STOPPING {
-					pm.sendEvent(PROCESS_STOPPED, mp)
-				} else {
-					pm.sendEvent(PROCESS_EXITED, mp)
-				}
+				pm.sendEvent(PROCESS_EXITED, mp)
 			default:
 				for _, mp := range pm.Processes {
 					if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
@@ -327,7 +315,7 @@ func (pm *ProgramManager) Run() error {
 			}
 		}
 
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(1 * time.Second)
 	}
 }
 

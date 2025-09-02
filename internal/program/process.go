@@ -15,6 +15,11 @@ import (
 	"taskmaster/internal/config"
 )
 
+type ProcessExitInfo struct {
+	ExitTime time.Time
+	Err      error
+}
+
 type ManagedProcess struct {
 	Num             int
 	Cmd             *exec.Cmd
