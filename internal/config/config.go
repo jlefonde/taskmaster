@@ -392,7 +392,7 @@ func readConfigFile(configPath string) ([]byte, error) {
 			filepath.Join(cwd, "/taskmasterd.yaml"),
 			filepath.Join(cwd, "/etc/taskmasterd.yaml"),
 			"/etc/taskmasterd.yaml",
-			"/etc/taskmaster/taskmasterd.conf",
+			"/etc/taskmaster/taskmasterd.yaml",
 		}
 
 		var conf []byte

@@ -31,8 +31,8 @@ const (
 )
 
 type ProcessExitEvent struct {
-	mp       *ManagedProcess
-	exitInfo ProcessExitInfo
+	Mp       *ManagedProcess
+	ExitInfo ProcessExitInfo
 }
 
 type Transition struct {
@@ -71,70 +71,59 @@ func newTransitions() *map[State]map[Event]Transition {
 		STOPPED: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, STOPPED, STARTING)
-				pm.printTransition(mp.Num, STOPPED, STARTING)
 				return pm.startProcess(mp)
 			}},
 		},
 		STARTING: {
 			PROCESS_STARTED: {To: RUNNING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, STARTING, RUNNING)
-				pm.printTransition(mp.Num, STARTING, RUNNING)
 				mp.RestartCount = 0
 				return ""
 			}},
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, STARTING, STOPPING)
-				pm.printTransition(mp.Num, STARTING, STOPPING)
 				return pm.stopProcess(mp)
 			}},
 			PROCESS_EXITED: {To: BACKOFF, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, STARTING, BACKOFF)
-				pm.printTransition(mp.Num, STARTING, BACKOFF)
 				return pm.restartProcess(mp)
 			}},
 		},
 		RUNNING: {
 			PROCESS_EXITED: {To: EXITED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, RUNNING, EXITED)
-				pm.printTransition(mp.Num, RUNNING, EXITED)
 				return ""
 			}},
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, RUNNING, STOPPING)
-				pm.printTransition(mp.Num, RUNNING, STOPPING)
 				return pm.stopProcess(mp)
 			}},
 		},
 		BACKOFF: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, BACKOFF, STARTING)
-				pm.printTransition(mp.Num, BACKOFF, STARTING)
 				return pm.startProcess(mp)
 			}},
 			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, BACKOFF, FATAL)
-				pm.printTransition(mp.Num, BACKOFF, FATAL)
 				return ""
 			}},
 		},
 		STOPPING: {
 			PROCESS_STOPPED: {To: STOPPED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, STOPPING, STOPPED)
-				pm.printTransition(mp.Num, STOPPING, STOPPED)
 				return ""
 			}},
 		},
 		EXITED: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, EXITED, STARTING)
-				pm.printTransition(mp.Num, EXITED, STARTING)
 				return pm.startProcess(mp)
 			}},
 		},
 		FATAL: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, FATAL, STARTING)
-				pm.printTransition(mp.Num, FATAL, STARTING)
 				return ""
 			}},
 		},
@@ -226,10 +215,6 @@ func (pm *ProgramManager) logTransition(processNum int, from State, to State) {
 	pm.Log.Infof("%s %s -> %s\n", pm.getProcessName(processNum), from, to)
 }
 
-func (pm *ProgramManager) printTransition(processNum int, from State, to State) {
-	fmt.Printf("%s %s -> %s\n", pm.getProcessName(processNum), from, to)
-}
-
 func (pm *ProgramManager) forceStop(mp *ManagedProcess) {
 	if mp.Cmd == nil || mp.Cmd.Process == nil {
 		pm.sendEvent(PROCESS_STOPPED, mp)
@@ -246,8 +231,8 @@ func (pm *ProgramManager) forwardExitEvents() {
 		go func(mp *ManagedProcess) {
 			exitInfo := <-mp.ExitChan
 			pm.ExitChan <- ProcessExitEvent{
-				mp:       mp,
-				exitInfo: exitInfo,
+				Mp:       mp,
+				ExitInfo: exitInfo,
 			}
 		}(mp)
 	}
@@ -275,7 +260,7 @@ func (pm *ProgramManager) allProcessesTerminated() bool {
 }
 
 func (pm *ProgramManager) Run() {
-	fmt.Printf("%s: %+v\n\n", pm.Name, pm.Config)
+	pm.Log.Debugf("%s: %+v\n\n", pm.Name, pm.Config)
 
 	for processNum := range pm.Config.NumProcs {
 		processName := pm.getProcessName(processNum)
@@ -304,8 +289,8 @@ func (pm *ProgramManager) Run() {
 				return
 			}
 		case exit := <-pm.ExitChan:
-			mp := exit.mp
-			mp.ExitTime = exit.exitInfo.ExitTime
+			mp := exit.Mp
+			mp.ExitTime = exit.ExitInfo.ExitTime
 
 			if mp.State == STOPPING {
 				pm.sendEvent(PROCESS_STOPPED, mp)

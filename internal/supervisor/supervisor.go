@@ -45,7 +45,7 @@ func Run(config *config.Config) error {
 		}
 	}
 
-	fmt.Printf("taskmaster: %+v\n\n", config.Taskmasterd)
+	log.Debugf("taskmaster: %+v\n\n", config.Taskmasterd)
 
 	quitSigs := make(chan os.Signal, 1)
 	signal.Notify(quitSigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
@@ -66,8 +66,7 @@ func Run(config *config.Config) error {
 
 	go func() {
 		sig := <-quitSigs
-		fmt.Println()
-		fmt.Println(sig)
+		log.Debugf("Received %s", sig)
 		for _, pm := range programManagers {
 			go func(pm *program.ProgramManager) {
 				log.Debugf("Stopping program manager: %s", pm.Name)
