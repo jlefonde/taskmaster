@@ -2,7 +2,6 @@ package supervisor
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -11,10 +10,9 @@ import (
 	"syscall"
 
 	"taskmaster/internal/config"
+	"taskmaster/internal/ctl"
 	"taskmaster/internal/logger"
 	"taskmaster/internal/program"
-
-	"github.com/chzyer/readline"
 )
 
 type Supervisor struct {
@@ -55,74 +53,13 @@ func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
 	return nil
 }
 
-func (s *Supervisor) newCompleter() *readline.PrefixCompleter {
-	var programNames []readline.PrefixCompleterInterface
+func (s *Supervisor) GetProgramNames() []string {
+	var programNames []string
 	for programName := range s.programManagers {
-		programNames = append(programNames, readline.PcItem(programName))
+		programNames = append(programNames, programName)
 	}
 
-	allPrograms := append(programNames, readline.PcItem("all"))
-
-	actions := []*readline.PrefixCompleter{
-		readline.PcItem("start", allPrograms...),
-		readline.PcItem("restart", allPrograms...),
-		readline.PcItem("stop", allPrograms...),
-		readline.PcItem("status", allPrograms...),
-		readline.PcItem("update"),
-		readline.PcItem("shutdown"),
-		readline.PcItem("reload"),
-	}
-
-	var helpCompletions []readline.PrefixCompleterInterface
-	for _, action := range actions {
-		helpCompletions = append(helpCompletions, readline.PcItem(string(action.Name)))
-	}
-
-	helpAction := readline.PcItem("help", helpCompletions...)
-
-	var flatActions []readline.PrefixCompleterInterface
-	flatActions = append(flatActions, helpAction)
-	for _, action := range actions {
-		flatActions = append(flatActions, action)
-	}
-
-	return readline.NewPrefixCompleter(flatActions...)
-}
-
-func (s *Supervisor) startCTL() error {
-	ctl, err := readline.NewEx(&readline.Config{
-		Prompt:            "taskmaster> ",
-		HistoryFile:       "/tmp/readline.tmp",
-		InterruptPrompt:   "^C",
-		EOFPrompt:         "exit",
-		AutoComplete:      s.newCompleter(),
-		HistorySearchFold: true,
-	})
-	if err != nil {
-		return err
-	}
-
-	defer ctl.Close()
-
-	ctl.CaptureExitSignal()
-
-	for {
-		line, err := ctl.Readline()
-		if err == readline.ErrInterrupt {
-			if len(line) == 0 {
-				break
-			} else {
-				continue
-			}
-		} else if err == io.EOF {
-			break
-		}
-
-		line = strings.TrimSpace(line)
-		fmt.Println(line)
-	}
-
-	return nil
+	return programNames
 }
 
 func (s *Supervisor) Run() {
@@ -160,7 +97,12 @@ func (s *Supervisor) Run() {
 		}
 	}()
 
-	s.startCTL()
+	ctl, err := ctl.NewEmbeddedController(s)
+	if err != nil {
+		// TODO
+	} else if err := ctl.Start(); err != nil {
+		// TODO
+	}
 
 	wg.Wait()
 }
