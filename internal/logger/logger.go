@@ -24,14 +24,14 @@ type Logger struct {
 	logLevels []string
 }
 
-func CreateLogger(LogFilePath string, logLevel LogLevel) (*Logger, error) {
+func NewLogger(logFilePath string, logLevel LogLevel) (*Logger, error) {
 	// TODO: replace os.O_TRUNC by os.O_APPEND
-	LogFile, err := os.OpenFile(LogFilePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("open logfile failed: %w", err)
 	}
 
-	return &Logger{log.New(LogFile, "", log.Lmsgprefix|log.Ldate|log.Ltime), logLevel, []string{
+	return &Logger{log.New(logFile, "", log.Lmsgprefix|log.Ldate|log.Ltime), logLevel, []string{
 		FATAL:   "FATAL   ",
 		ERROR:   "ERROR   ",
 		WARNING: "WARNING ",

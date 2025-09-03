@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	s "strings"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -17,13 +17,32 @@ import (
 	"github.com/chzyer/readline"
 )
 
+type Supervisor struct {
+	config          *config.Config
+	log             *logger.Logger
+	programManagers map[string]*program.ProgramManager
+}
+
+func NewSupervisor(config *config.Config) (*Supervisor, error) {
+	log, err := logger.NewLogger(config.Taskmasterd.LogFile, config.Taskmasterd.LogLevel)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't create logger: %w", err)
+	}
+
+	return &Supervisor{
+		config:          config,
+		log:             log,
+		programManagers: make(map[string]*program.ProgramManager),
+	}, nil
+}
+
 func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
 	logDir, err := os.ReadDir(childLogDir)
 	if err != nil {
 		return fmt.Errorf("read child log directory failed: %w", err)
 	} else {
 		for _, entry := range logDir {
-			if entry.IsDir() || !s.Contains(entry.Name(), "---taskmaster") {
+			if entry.IsDir() || !strings.Contains(entry.Name(), "---taskmaster") {
 				continue
 			}
 
@@ -36,58 +55,51 @@ func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
 	return nil
 }
 
-func Run(config *config.Config) error {
-	log, err := logger.CreateLogger(config.Taskmasterd.LogFile, config.Taskmasterd.LogLevel)
-	if err != nil {
-		return fmt.Errorf("couldn't create logger: %w", err)
+func (s *Supervisor) newCompleter() *readline.PrefixCompleter {
+	var programNames []readline.PrefixCompleterInterface
+	for programName := range s.programManagers {
+		programNames = append(programNames, readline.PcItem(programName))
 	}
 
-	if !config.Taskmasterd.NoCleanup {
-		if err := cleanupLogFiles(log, config.Taskmasterd.ChildLogDir); err != nil {
-			log.Warning("couldn't cleanup log files:", err)
-		}
+	allPrograms := append(programNames, readline.PcItem("all"))
+
+	actions := []*readline.PrefixCompleter{
+		readline.PcItem("start", allPrograms...),
+		readline.PcItem("restart", allPrograms...),
+		readline.PcItem("stop", allPrograms...),
+		readline.PcItem("status", allPrograms...),
+		readline.PcItem("update"),
+		readline.PcItem("shutdown"),
+		readline.PcItem("reload"),
 	}
 
-	log.Debugf("taskmaster: %+v\n\n", config.Taskmasterd)
-
-	quitSigs := make(chan os.Signal, 1)
-	signal.Notify(quitSigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-
-	programManagers := make(map[string]*program.ProgramManager)
-
-	var wg sync.WaitGroup
-	for programName, programConfig := range config.Programs {
-		programManagers[programName] = program.NewProgramManager(programName, &programConfig, config.Taskmasterd.ChildLogDir, log)
-
-		wg.Add(1)
-		go func(pm *program.ProgramManager) {
-			defer wg.Done()
-
-			pm.Run()
-		}(programManagers[programName])
+	var helpCompletions []readline.PrefixCompleterInterface
+	for _, action := range actions {
+		helpCompletions = append(helpCompletions, readline.PcItem(string(action.Name)))
 	}
 
-	go func() {
-		sig := <-quitSigs
-		log.Debugf("Received %s", sig)
-		for _, pm := range programManagers {
-			go func(pm *program.ProgramManager) {
-				log.Debugf("Stopping program manager: %s", pm.Name)
-				pm.Stop()
-			}(pm)
-		}
-	}()
+	helpAction := readline.PcItem("help", helpCompletions...)
 
+	var flatActions []readline.PrefixCompleterInterface
+	flatActions = append(flatActions, helpAction)
+	for _, action := range actions {
+		flatActions = append(flatActions, action)
+	}
+
+	return readline.NewPrefixCompleter(flatActions...)
+}
+
+func (s *Supervisor) startCTL() error {
 	ctl, err := readline.NewEx(&readline.Config{
 		Prompt:            "taskmaster> ",
 		HistoryFile:       "/tmp/readline.tmp",
 		InterruptPrompt:   "^C",
 		EOFPrompt:         "exit",
+		AutoComplete:      s.newCompleter(),
 		HistorySearchFold: true,
 	})
 	if err != nil {
-		// TODO: handle more gracefully
-		panic(err)
+		return err
 	}
 
 	defer ctl.Close()
@@ -106,11 +118,49 @@ func Run(config *config.Config) error {
 			break
 		}
 
-		line = s.TrimSpace(line)
+		line = strings.TrimSpace(line)
 		fmt.Println(line)
 	}
 
-	wg.Wait()
-
 	return nil
+}
+
+func (s *Supervisor) Run() {
+	if !s.config.Taskmasterd.NoCleanup {
+		if err := cleanupLogFiles(s.log, s.config.Taskmasterd.ChildLogDir); err != nil {
+			s.log.Warning("couldn't cleanup log files:", err)
+		}
+	}
+
+	s.log.Debugf("taskmaster: %+v\n\n", s.config.Taskmasterd)
+
+	quitSigs := make(chan os.Signal, 1)
+	signal.Notify(quitSigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
+	var wg sync.WaitGroup
+	for programName, programConfig := range s.config.Programs {
+		s.programManagers[programName] = program.NewProgramManager(programName, &programConfig, s.config.Taskmasterd.ChildLogDir, s.log)
+
+		wg.Add(1)
+		go func(pm *program.ProgramManager) {
+			defer wg.Done()
+
+			pm.Run()
+		}(s.programManagers[programName])
+	}
+
+	go func() {
+		sig := <-quitSigs
+		s.log.Debugf("Received %s", sig)
+		for _, pm := range s.programManagers {
+			go func(pm *program.ProgramManager) {
+				s.log.Debugf("Stopping program manager: %s", pm.Name)
+				pm.Stop()
+			}(pm)
+		}
+	}()
+
+	s.startCTL()
+
+	wg.Wait()
 }
