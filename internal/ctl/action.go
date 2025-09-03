@@ -137,9 +137,16 @@ func helpAction(ctl *Controller, lineFields []string) {
 			fmt.Println()
 		}
 	} else if len(lineFields) == 1 {
+		action, ok := ctl.actions[Action(lineFields[0])]
+		if !ok {
+			fmt.Printf("*** No help available for '%s'\n", lineFields[0])
+			fmt.Println("*** Type 'help' for a list of available actions")
+			return
+		}
 
+		action.helper()
 	} else {
-
+		fmt.Println("*** Invalid help syntax. Use: help <action>")
 	}
 }
 
