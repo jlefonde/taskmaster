@@ -8,9 +8,26 @@ import (
 	"github.com/chzyer/readline"
 )
 
+type Action string
+
+const (
+	START    Action = "start"
+	STOP     Action = "stop"
+	RESTART  Action = "restart"
+	STATUS   Action = "status"
+	UPDATE   Action = "update"
+	SHUTDOWN Action = "shutdown"
+)
+
 type Controller struct {
 	supervisor SupervisorInterface
 	rl         *readline.Instance
+	actions    map[Action]*actionMetadata
+}
+
+type actionMetadata struct {
+	description string
+	completer   *readline.PrefixCompleter
 }
 
 type SupervisorInterface interface {
@@ -25,13 +42,31 @@ type SupervisorInterface interface {
 	// GetAllStatus(name string) (string, error)
 }
 
+func newActions(supervisor SupervisorInterface) map[Action]*actionMetadata {
+	var programNames []readline.PrefixCompleterInterface
+	for _, programName := range supervisor.GetProgramNames() {
+		programNames = append(programNames, readline.PcItem(programName))
+	}
+
+	return map[Action]*actionMetadata{
+		START:    newActionMetadata(string(START), "", programNames...),
+		STOP:     newActionMetadata(string(STOP), "", programNames...),
+		RESTART:  newActionMetadata(string(RESTART), "", programNames...),
+		STATUS:   newActionMetadata(string(STATUS), "", programNames...),
+		UPDATE:   newActionMetadata(string(UPDATE), ""),
+		SHUTDOWN: newActionMetadata(string(SHUTDOWN), ""),
+	}
+}
+
 func NewEmbeddedController(supervisor SupervisorInterface) (*Controller, error) {
+	actions := newActions(supervisor)
+
 	rl, err := readline.NewEx(&readline.Config{
 		Prompt:            "taskmaster> ",
 		HistoryFile:       "/tmp/readline.tmp",
 		InterruptPrompt:   "^C",
 		EOFPrompt:         "exit",
-		AutoComplete:      newCompleter(supervisor),
+		AutoComplete:      newCompleter(actions),
 		HistorySearchFold: true,
 	})
 	if err != nil {
@@ -41,30 +76,21 @@ func NewEmbeddedController(supervisor SupervisorInterface) (*Controller, error) 
 	return &Controller{
 		supervisor: supervisor,
 		rl:         rl,
+		actions:    actions,
 	}, nil
 }
 
-func newCompleter(supervisor SupervisorInterface) *readline.PrefixCompleter {
-	var programNames []readline.PrefixCompleterInterface
-	for _, programName := range supervisor.GetProgramNames() {
-		programNames = append(programNames, readline.PcItem(programName))
+func newActionMetadata(name string, description string, pc ...readline.PrefixCompleterInterface) *actionMetadata {
+	return &actionMetadata{
+		description: description,
+		completer:   readline.PcItem(name, pc...),
 	}
+}
 
-	allPrograms := append(programNames, readline.PcItem("all"))
-
-	actions := []*readline.PrefixCompleter{
-		readline.PcItem("start", allPrograms...),
-		readline.PcItem("stop", allPrograms...),
-		readline.PcItem("restart", allPrograms...),
-		readline.PcItem("status", allPrograms...),
-		readline.PcItem("update"),
-		readline.PcItem("shutdown"),
-		readline.PcItem("reload"),
-	}
-
+func newCompleter(actions map[Action]*actionMetadata) *readline.PrefixCompleter {
 	var helpCompletions []readline.PrefixCompleterInterface
-	for _, action := range actions {
-		helpCompletions = append(helpCompletions, readline.PcItem(string(action.Name)))
+	for actionName := range actions {
+		helpCompletions = append(helpCompletions, readline.PcItem(string(actionName)))
 	}
 
 	helpAction := readline.PcItem("help", helpCompletions...)
@@ -72,7 +98,7 @@ func newCompleter(supervisor SupervisorInterface) *readline.PrefixCompleter {
 	var flatActions []readline.PrefixCompleterInterface
 	flatActions = append(flatActions, helpAction)
 	for _, action := range actions {
-		flatActions = append(flatActions, action)
+		flatActions = append(flatActions, action.completer)
 	}
 
 	return readline.NewPrefixCompleter(flatActions...)
