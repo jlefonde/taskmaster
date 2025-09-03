@@ -50,7 +50,7 @@ func newActions(supervisor SupervisorInterface) map[Action]*actionMetadata {
 		SHUTDOWN: newActionMetadata(string(SHUTDOWN), shutdownHelper, shutdownAction, nil),
 	}
 
-	actions[HELP] = newActionMetadata(string(HELP), nil, helpAction, readline.PcItemDynamic(getActionNames(actions)))
+	actions[HELP] = newActionMetadata(string(HELP), helpHelper, helpAction, readline.PcItemDynamic(getActionNames(actions)))
 	return actions
 }
 
@@ -67,7 +67,7 @@ func getActionNames(actions map[Action]*actionMetadata) func(string) []string {
 
 func startAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) > 1 {
-		fmt.Printf("Starting program: %s\n", lineFields[1])
+		fmt.Printf("Starting program: %s\n", lineFields[0])
 		// ctl.supervisor.StartProgram(lineFields[1])
 	} else {
 		fmt.Println("Starting all programs")
@@ -77,7 +77,7 @@ func startAction(ctl *Controller, lineFields []string) {
 
 func stopAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) > 1 {
-		fmt.Printf("Stopping program: %s\n", lineFields[1])
+		fmt.Printf("Stopping program: %s\n", lineFields[0])
 		// ctl.supervisor.StopProgram(lineFields[1])
 	} else {
 		fmt.Println("Stopping all programs")
@@ -87,7 +87,7 @@ func stopAction(ctl *Controller, lineFields []string) {
 
 func restartAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) > 1 {
-		fmt.Printf("Restarting program: %s\n", lineFields[1])
+		fmt.Printf("Restarting program: %s\n", lineFields[0])
 		// ctl.supervisor.StartProgram(lineFields[1])
 	} else {
 		fmt.Println("Restarting all programs")
@@ -97,7 +97,7 @@ func restartAction(ctl *Controller, lineFields []string) {
 
 func statusAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) > 1 {
-		fmt.Printf("Getting status info for program: %s\n", lineFields[1])
+		fmt.Printf("Getting status info for program: %s\n", lineFields[0])
 		// ctl.supervisor.GetStatus(lineFields[1])
 	} else {
 		fmt.Println("Getting status info for all programs")
@@ -114,7 +114,33 @@ func shutdownAction(ctl *Controller, lineFields []string) {
 }
 
 func helpAction(ctl *Controller, lineFields []string) {
-	startHelper()
+	if len(lineFields) == 0 {
+		fmt.Println("┌───────────────── Available Actions ─────────────────┐")
+		fmt.Println("│ Type 'help <action>'                                │")
+		fmt.Println("└─────────────────────────────────────────────────────┘")
+
+		actionNames := make([]string, 0, len(ctl.actions))
+		for actionName := range ctl.actions {
+			if actionName != HELP {
+				actionNames = append(actionNames, string(actionName))
+			}
+		}
+
+		for i, actionName := range actionNames {
+			fmt.Printf("%-12s", actionName)
+			if (i+1)%4 == 0 {
+				fmt.Println()
+			}
+		}
+
+		if len(actionNames)%4 != 0 {
+			fmt.Println()
+		}
+	} else if len(lineFields) == 1 {
+
+	} else {
+
+	}
 }
 
 func startHelper() {
@@ -147,4 +173,9 @@ func updateHelper() {
 
 func shutdownHelper() {
 	fmt.Printf("shutdown\t\tShutdown the supervisor\n")
+}
+
+func helpHelper() {
+	fmt.Printf("help\t\tPrint a list of available actions\n")
+	fmt.Printf("help <action>\tPrint help for <action>\n")
 }

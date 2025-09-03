@@ -88,7 +88,7 @@ func (ctl *Controller) Start() error {
 			continue
 		}
 
-		action.handler(ctl, lineFields)
+		action.handler(ctl, lineFields[1:])
 	}
 
 	return nil
