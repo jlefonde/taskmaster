@@ -2,7 +2,6 @@ package program
 
 import (
 	"fmt"
-	"os/exec"
 	"syscall"
 	"time"
 
@@ -31,11 +30,6 @@ const (
 	TIMEOUT         Event = "TIMEOUT"
 )
 
-type ProcessExitEvent struct {
-	Mp       *ManagedProcess
-	ExitInfo ProcessExitInfo
-}
-
 type Transition struct {
 	To     State
 	Action func(pm *ProgramManager, mp *ManagedProcess) Event
@@ -49,7 +43,7 @@ type ProgramManager struct {
 	Processes   map[string]*ManagedProcess
 	Transitions *map[State]map[Event]Transition
 	StopChan    chan struct{}
-	ExitChan    chan ProcessExitEvent
+	ExitChan    chan ProcessExitInfo
 	Terminating bool
 }
 
@@ -62,7 +56,7 @@ func NewProgramManager(programName string, programConfig *config.Program, childL
 		Processes:   make(map[string]*ManagedProcess),
 		Transitions: newTransitions(),
 		StopChan:    make(chan struct{}),
-		ExitChan:    make(chan ProcessExitEvent, programConfig.NumProcs),
+		ExitChan:    make(chan ProcessExitInfo),
 		Terminating: false,
 	}
 }
@@ -172,13 +166,13 @@ func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
 	mp.StartTime = time.Now()
 	mp.Cmd = cmd
 
-	go func(cmd *exec.Cmd) {
-		exitInfo := ProcessExitInfo{ExitTime: time.Now(), Err: cmd.Wait()}
+	go func(mp *ManagedProcess) {
+		exitInfo := ProcessExitInfo{Mp: mp, ExitTime: time.Now(), Err: mp.Cmd.Wait()}
 		if exitInfo.Err != nil {
-			pm.Log.Warningf("process %d exited with error: %v", cmd.Process.Pid, exitInfo.Err)
+			pm.Log.Warningf("process %d exited: %v", mp.Cmd.Process.Pid, exitInfo.Err)
 		}
 		mp.ExitChan <- exitInfo
-	}(cmd)
+	}(mp)
 
 	if pm.Config.StartSecs == 0 {
 		return PROCESS_STARTED
@@ -229,18 +223,6 @@ func (pm *ProgramManager) forceStop(mp *ManagedProcess) {
 	}
 }
 
-func (pm *ProgramManager) forwardExitEvents() {
-	for _, mp := range pm.Processes {
-		go func(mp *ManagedProcess) {
-			exitInfo := <-mp.ExitChan
-			pm.ExitChan <- ProcessExitEvent{
-				Mp:       mp,
-				ExitInfo: exitInfo,
-			}
-		}(mp)
-	}
-}
-
 func (pm *ProgramManager) initiateShutdown() {
 	if !pm.Terminating {
 		pm.Terminating = true
@@ -270,15 +252,13 @@ func (pm *ProgramManager) Run() {
 		pm.Processes[processName] = &ManagedProcess{
 			Num:      processNum,
 			State:    STOPPED,
-			ExitChan: make(chan ProcessExitInfo),
+			ExitChan: pm.ExitChan,
 		}
 
 		if pm.Config.AutoStart {
 			pm.sendEvent(START, pm.Processes[processName])
 		}
 	}
-
-	pm.forwardExitEvents()
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -293,7 +273,7 @@ func (pm *ProgramManager) Run() {
 			}
 		case exit := <-pm.ExitChan:
 			mp := exit.Mp
-			mp.ExitTime = exit.ExitInfo.ExitTime
+			mp.ExitTime = exit.ExitTime
 
 			if mp.State == STOPPING {
 				pm.sendEvent(PROCESS_STOPPED, mp)

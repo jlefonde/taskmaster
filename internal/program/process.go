@@ -16,6 +16,7 @@ import (
 )
 
 type ProcessExitInfo struct {
+	Mp       *ManagedProcess
 	ExitTime time.Time
 	Err      error
 }
