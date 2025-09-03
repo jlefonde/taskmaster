@@ -2,6 +2,7 @@ package ctl
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/chzyer/readline"
 )
@@ -139,14 +140,14 @@ func helpAction(ctl *Controller, lineFields []string) {
 	} else if len(lineFields) == 1 {
 		action, ok := ctl.actions[Action(lineFields[0])]
 		if !ok {
-			fmt.Printf("*** No help available for '%s'\n", lineFields[0])
-			fmt.Println("*** Type 'help' for a list of available actions")
+			fmt.Fprintf(os.Stderr, "*** No help available for '%s'\n", lineFields[0])
+			fmt.Fprintln(os.Stderr, "*** Type 'help' for a list of available actions")
 			return
 		}
 
 		action.helper()
 	} else {
-		fmt.Println("*** Invalid help syntax. Use: help <action>")
+		fmt.Fprintln(os.Stderr, "*** Invalid help syntax. Use: help <action>")
 	}
 }
 
