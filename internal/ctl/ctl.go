@@ -11,6 +11,7 @@ import (
 type Action string
 
 const (
+	HELP     Action = "help"
 	START    Action = "start"
 	STOP     Action = "stop"
 	RESTART  Action = "restart"
@@ -19,19 +20,22 @@ const (
 	SHUTDOWN Action = "shutdown"
 )
 
+type actionHandler func([]string)
+
+type actionMetadata struct {
+	description string
+	handler     actionHandler
+	completer   *readline.PrefixCompleter
+}
+
 type Controller struct {
 	supervisor SupervisorInterface
 	rl         *readline.Instance
 	actions    map[Action]*actionMetadata
 }
 
-type actionMetadata struct {
-	description string
-	completer   *readline.PrefixCompleter
-}
-
 type SupervisorInterface interface {
-	GetProgramNames() []string
+	GetProgramNames() func(string) []string
 	// StartProgram(name string) error
 	// StartAllPrograms() error
 	// StopProgram(name string) error
@@ -42,19 +46,24 @@ type SupervisorInterface interface {
 	// GetAllStatus(name string) (string, error)
 }
 
-func newActions(supervisor SupervisorInterface) map[Action]*actionMetadata {
-	var programNames []readline.PrefixCompleterInterface
-	for _, programName := range supervisor.GetProgramNames() {
-		programNames = append(programNames, readline.PcItem(programName))
+func startAction(lineFields []string) {
+	if len(lineFields) > 1 {
+		fmt.Printf("Starting program: %s\n", lineFields[1])
+		// ctl.supervisor.StartProgram(lineFields[1])
+	} else {
+		fmt.Println("Starting all programs")
+		// ctl.supervisor.StartAllPrograms()
 	}
+}
 
+func newActions(supervisor SupervisorInterface) map[Action]*actionMetadata {
 	return map[Action]*actionMetadata{
-		START:    newActionMetadata(string(START), "", programNames...),
-		STOP:     newActionMetadata(string(STOP), "", programNames...),
-		RESTART:  newActionMetadata(string(RESTART), "", programNames...),
-		STATUS:   newActionMetadata(string(STATUS), "", programNames...),
-		UPDATE:   newActionMetadata(string(UPDATE), ""),
-		SHUTDOWN: newActionMetadata(string(SHUTDOWN), ""),
+		START:    newActionMetadata(string(START), "", startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
+		STOP:     newActionMetadata(string(STOP), "", startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
+		RESTART:  newActionMetadata(string(RESTART), "", startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
+		STATUS:   newActionMetadata(string(STATUS), "", startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
+		UPDATE:   newActionMetadata(string(UPDATE), "", startAction, nil),
+		SHUTDOWN: newActionMetadata(string(SHUTDOWN), "", startAction, nil),
 	}
 }
 
@@ -80,28 +89,34 @@ func NewEmbeddedController(supervisor SupervisorInterface) (*Controller, error) 
 	}, nil
 }
 
-func newActionMetadata(name string, description string, pc ...readline.PrefixCompleterInterface) *actionMetadata {
+func newActionMetadata(name string, description string, handler actionHandler, pc readline.PrefixCompleterInterface) *actionMetadata {
+	completers := []readline.PrefixCompleterInterface{}
+	if pc != nil {
+		completers = append(completers, pc)
+	}
+
 	return &actionMetadata{
 		description: description,
-		completer:   readline.PcItem(name, pc...),
+		handler:     handler,
+		completer:   readline.PcItem(name, completers...),
 	}
 }
 
 func newCompleter(actions map[Action]*actionMetadata) *readline.PrefixCompleter {
-	var helpCompletions []readline.PrefixCompleterInterface
+	var helper []readline.PrefixCompleterInterface
 	for actionName := range actions {
-		helpCompletions = append(helpCompletions, readline.PcItem(string(actionName)))
+		helper = append(helper, readline.PcItem(string(actionName)))
 	}
 
-	helpAction := readline.PcItem("help", helpCompletions...)
+	helpAction := readline.PcItem(string(HELP), helper...)
 
-	var flatActions []readline.PrefixCompleterInterface
-	flatActions = append(flatActions, helpAction)
+	var allActions []readline.PrefixCompleterInterface
+	allActions = append(allActions, helpAction)
 	for _, action := range actions {
-		flatActions = append(flatActions, action.completer)
+		allActions = append(allActions, action.completer)
 	}
 
-	return readline.NewPrefixCompleter(flatActions...)
+	return readline.NewPrefixCompleter(allActions...)
 }
 
 func (ctl *Controller) Start() error {
@@ -122,7 +137,20 @@ func (ctl *Controller) Start() error {
 		}
 
 		line = strings.TrimSpace(line)
-		fmt.Println(line)
+		if len(line) == 0 {
+			continue
+		}
+
+		lineFields := strings.Fields(line)
+		actionName := Action(lineFields[0])
+
+		action, ok := ctl.actions[actionName]
+		if !ok {
+			fmt.Printf("Unknown command: %s\n", actionName)
+			continue
+		}
+
+		action.handler(lineFields)
 	}
 
 	return nil
