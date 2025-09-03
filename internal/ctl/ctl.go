@@ -8,26 +8,6 @@ import (
 	"github.com/chzyer/readline"
 )
 
-type Action string
-
-const (
-	HELP     Action = "help"
-	START    Action = "start"
-	STOP     Action = "stop"
-	RESTART  Action = "restart"
-	STATUS   Action = "status"
-	UPDATE   Action = "update"
-	SHUTDOWN Action = "shutdown"
-)
-
-type actionHandler func([]string)
-
-type actionMetadata struct {
-	description string
-	handler     actionHandler
-	completer   *readline.PrefixCompleter
-}
-
 type Controller struct {
 	supervisor SupervisorInterface
 	rl         *readline.Instance
@@ -44,41 +24,6 @@ type SupervisorInterface interface {
 	// RestartAllPrograms() error
 	// GetStatus(name string) (string, error)
 	// GetAllStatus(name string) (string, error)
-}
-
-func startAction(lineFields []string) {
-	if len(lineFields) > 1 {
-		fmt.Printf("Starting program: %s\n", lineFields[1])
-		// ctl.supervisor.StartProgram(lineFields[1])
-	} else {
-		fmt.Println("Starting all programs")
-		// ctl.supervisor.StartAllPrograms()
-	}
-}
-
-func getActionNames(actions map[Action]*actionMetadata) func(string) []string {
-	return func(string) []string {
-		actionNames := make([]string, 0)
-		for actionName := range actions {
-			actionNames = append(actionNames, string(actionName))
-		}
-
-		return actionNames
-	}
-}
-
-func newActions(supervisor SupervisorInterface) map[Action]*actionMetadata {
-	actions := map[Action]*actionMetadata{
-		START:    newActionMetadata(string(START), "", startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
-		STOP:     newActionMetadata(string(STOP), "", startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
-		RESTART:  newActionMetadata(string(RESTART), "", startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
-		STATUS:   newActionMetadata(string(STATUS), "", startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
-		UPDATE:   newActionMetadata(string(UPDATE), "", startAction, nil),
-		SHUTDOWN: newActionMetadata(string(SHUTDOWN), "", startAction, nil),
-	}
-
-	actions[HELP] = newActionMetadata(string(HELP), "", startAction, readline.PcItemDynamic(getActionNames(actions)))
-	return actions
 }
 
 func NewEmbeddedController(supervisor SupervisorInterface) (*Controller, error) {
@@ -101,19 +46,6 @@ func NewEmbeddedController(supervisor SupervisorInterface) (*Controller, error) 
 		rl:         rl,
 		actions:    actions,
 	}, nil
-}
-
-func newActionMetadata(name string, description string, handler actionHandler, pc readline.PrefixCompleterInterface) *actionMetadata {
-	completers := []readline.PrefixCompleterInterface{}
-	if pc != nil {
-		completers = append(completers, pc)
-	}
-
-	return &actionMetadata{
-		description: description,
-		handler:     handler,
-		completer:   readline.PcItem(name, completers...),
-	}
 }
 
 func newCompleter(actions map[Action]*actionMetadata) *readline.PrefixCompleter {
@@ -156,7 +88,7 @@ func (ctl *Controller) Start() error {
 			continue
 		}
 
-		action.handler(lineFields)
+		action.handler(ctl, lineFields)
 	}
 
 	return nil
