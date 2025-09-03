@@ -56,8 +56,19 @@ func startAction(lineFields []string) {
 	}
 }
 
+func getActionNames(actions map[Action]*actionMetadata) func(string) []string {
+	return func(string) []string {
+		actionNames := make([]string, 0)
+		for actionName := range actions {
+			actionNames = append(actionNames, string(actionName))
+		}
+
+		return actionNames
+	}
+}
+
 func newActions(supervisor SupervisorInterface) map[Action]*actionMetadata {
-	return map[Action]*actionMetadata{
+	actions := map[Action]*actionMetadata{
 		START:    newActionMetadata(string(START), "", startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
 		STOP:     newActionMetadata(string(STOP), "", startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
 		RESTART:  newActionMetadata(string(RESTART), "", startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
@@ -65,6 +76,9 @@ func newActions(supervisor SupervisorInterface) map[Action]*actionMetadata {
 		UPDATE:   newActionMetadata(string(UPDATE), "", startAction, nil),
 		SHUTDOWN: newActionMetadata(string(SHUTDOWN), "", startAction, nil),
 	}
+
+	actions[HELP] = newActionMetadata(string(HELP), "", startAction, readline.PcItemDynamic(getActionNames(actions)))
+	return actions
 }
 
 func NewEmbeddedController(supervisor SupervisorInterface) (*Controller, error) {
@@ -103,15 +117,7 @@ func newActionMetadata(name string, description string, handler actionHandler, p
 }
 
 func newCompleter(actions map[Action]*actionMetadata) *readline.PrefixCompleter {
-	var helper []readline.PrefixCompleterInterface
-	for actionName := range actions {
-		helper = append(helper, readline.PcItem(string(actionName)))
-	}
-
-	helpAction := readline.PcItem(string(HELP), helper...)
-
 	var allActions []readline.PrefixCompleterInterface
-	allActions = append(allActions, helpAction)
 	for _, action := range actions {
 		allActions = append(allActions, action.completer)
 	}

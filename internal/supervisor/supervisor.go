@@ -54,7 +54,7 @@ func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
 }
 
 func (s *Supervisor) GetProgramNames() func(string) []string {
-	return func(line string) []string {
+	return func(string) []string {
 		var programNames []string
 		for programName := range s.programManagers {
 			programNames = append(programNames, programName)
