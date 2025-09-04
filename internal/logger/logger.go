@@ -72,35 +72,35 @@ func (l *Logger) Debugf(format string, v ...interface{}) {
 
 func (l *Logger) Fatal(v ...any) {
 	if l.level <= FATAL {
-		args := append([]any{l.logLevels[FATAL]}, v...)
-		l.logger.Fatalln(args...)
+		message := fmt.Sprint(v...)
+		l.logger.Println(l.logLevels[FATAL] + message)
 	}
 }
 
 func (l *Logger) Error(v ...any) {
 	if l.level <= ERROR {
-		args := append([]any{l.logLevels[ERROR]}, v...)
-		l.logger.Println(args...)
+		message := fmt.Sprint(v...)
+		l.logger.Println(l.logLevels[ERROR] + message)
 	}
 }
 
 func (l *Logger) Warning(v ...any) {
 	if l.level <= WARNING {
-		args := append([]any{l.logLevels[WARNING]}, v...)
-		l.logger.Println(args...)
+		message := fmt.Sprint(v...)
+		l.logger.Println(l.logLevels[WARNING] + message)
 	}
 }
 
 func (l *Logger) Info(v ...any) {
 	if l.level <= INFO {
-		args := append([]any{l.logLevels[INFO]}, v...)
-		l.logger.Println(args...)
+		message := fmt.Sprint(v...)
+		l.logger.Println(l.logLevels[INFO] + message)
 	}
 }
 
 func (l *Logger) Debug(v ...any) {
 	if l.level <= DEBUG {
-		args := append([]any{l.logLevels[DEBUG]}, v...)
-		l.logger.Println(args...)
+		message := fmt.Sprint(v...)
+		l.logger.Println(l.logLevels[DEBUG] + message)
 	}
 }

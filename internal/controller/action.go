@@ -1,4 +1,4 @@
-package ctl
+package controller
 
 import (
 	"fmt"
@@ -10,13 +10,14 @@ import (
 type Action string
 
 const (
-	HELP     Action = "help"
-	START    Action = "start"
-	STOP     Action = "stop"
-	RESTART  Action = "restart"
-	STATUS   Action = "status"
-	UPDATE   Action = "update"
-	SHUTDOWN Action = "shutdown"
+	HELP    Action = "help"
+	START   Action = "start"
+	STOP    Action = "stop"
+	RESTART Action = "restart"
+	STATUS  Action = "status"
+	UPDATE  Action = "update"
+	QUIT    Action = "quit"
+	EXIT    Action = "exit"
 )
 
 type actionHandler func(ctl *Controller, lineFields []string)
@@ -43,12 +44,13 @@ func newActionMetadata(name string, helper actionHelper, handler actionHandler, 
 
 func newActions(supervisor SupervisorInterface) map[Action]*actionMetadata {
 	actions := map[Action]*actionMetadata{
-		START:    newActionMetadata(string(START), startHelper, startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
-		STOP:     newActionMetadata(string(STOP), stopHelper, stopAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
-		RESTART:  newActionMetadata(string(RESTART), restartHelper, restartAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
-		STATUS:   newActionMetadata(string(STATUS), statusHelper, statusAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
-		UPDATE:   newActionMetadata(string(UPDATE), updateHelper, updateAction, nil),
-		SHUTDOWN: newActionMetadata(string(SHUTDOWN), shutdownHelper, shutdownAction, nil),
+		START:   newActionMetadata(string(START), startHelper, startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
+		STOP:    newActionMetadata(string(STOP), stopHelper, stopAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
+		RESTART: newActionMetadata(string(RESTART), restartHelper, restartAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
+		STATUS:  newActionMetadata(string(STATUS), statusHelper, statusAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
+		UPDATE:  newActionMetadata(string(UPDATE), updateHelper, updateAction, nil),
+		QUIT:    newActionMetadata(string(QUIT), quitHelper, shutdownAction, nil),
+		EXIT:    newActionMetadata(string(EXIT), exitHelper, shutdownAction, nil),
 	}
 
 	actions[HELP] = newActionMetadata(string(HELP), helpHelper, helpAction, readline.PcItemDynamic(getActionNames(actions)))
@@ -68,40 +70,34 @@ func getActionNames(actions map[Action]*actionMetadata) func(string) []string {
 
 func startAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) > 1 {
-		fmt.Printf("Starting program: %s\n", lineFields[0])
-		// ctl.supervisor.StartProgram(lineFields[1])
+		// for program := range lineFields {
+		// 	// ctl.supervisor.StartProgram(lineFields[1])
+		// }
 	} else {
-		fmt.Println("Starting all programs")
 		// ctl.supervisor.StartAllPrograms()
 	}
 }
 
 func stopAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) > 1 {
-		fmt.Printf("Stopping program: %s\n", lineFields[0])
 		// ctl.supervisor.StopProgram(lineFields[1])
 	} else {
-		fmt.Println("Stopping all programs")
 		// ctl.supervisor.StopAllPrograms()
 	}
 }
 
 func restartAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) > 1 {
-		fmt.Printf("Restarting program: %s\n", lineFields[0])
 		// ctl.supervisor.StartProgram(lineFields[1])
 	} else {
-		fmt.Println("Restarting all programs")
 		// ctl.supervisor.StartAllPrograms()
 	}
 }
 
 func statusAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) > 1 {
-		fmt.Printf("Getting status info for program: %s\n", lineFields[0])
 		// ctl.supervisor.GetStatus(lineFields[1])
 	} else {
-		fmt.Println("Getting status info for all programs")
 		// ctl.supervisor.GetAllStatus()
 	}
 }
@@ -111,7 +107,7 @@ func updateAction(ctl *Controller, lineFields []string) {
 }
 
 func shutdownAction(ctl *Controller, lineFields []string) {
-	fmt.Println("Shutting down")
+	ctl.running = false
 }
 
 func helpAction(ctl *Controller, lineFields []string) {
@@ -179,8 +175,12 @@ func updateHelper() {
 	fmt.Printf("update\t\t\tReload configuration and update processes\n")
 }
 
-func shutdownHelper() {
-	fmt.Printf("shutdown\t\tShutdown the supervisor\n")
+func quitHelper() {
+	fmt.Printf("quit\t\tShutdown the supervisor\n")
+}
+
+func exitHelper() {
+	fmt.Printf("exit\t\tShutdown the supervisor\n")
 }
 
 func helpHelper() {

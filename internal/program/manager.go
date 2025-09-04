@@ -297,5 +297,6 @@ func (pm *ProgramManager) Run() {
 }
 
 func (pm *ProgramManager) Stop() {
+	pm.Log.Infof("stopping program manager: %s", pm.Name)
 	close(pm.StopChan)
 }

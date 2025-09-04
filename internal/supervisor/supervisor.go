@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	"taskmaster/internal/config"
-	"taskmaster/internal/ctl"
+	"taskmaster/internal/controller"
 	"taskmaster/internal/logger"
 	"taskmaster/internal/program"
 )
@@ -19,6 +19,7 @@ type Supervisor struct {
 	config          *config.Config
 	log             *logger.Logger
 	programManagers map[string]*program.ProgramManager
+	ctlExited       chan struct{}
 }
 
 func NewSupervisor(config *config.Config) (*Supervisor, error) {
@@ -31,6 +32,7 @@ func NewSupervisor(config *config.Config) (*Supervisor, error) {
 		config:          config,
 		log:             log,
 		programManagers: make(map[string]*program.ProgramManager),
+		ctlExited:       make(chan struct{}),
 	}, nil
 }
 
@@ -88,22 +90,28 @@ func (s *Supervisor) Run() {
 		}(s.programManagers[programName])
 	}
 
-	go func() {
-		sig := <-quitSigs
-		s.log.Debugf("Received %s", sig)
-		for _, pm := range s.programManagers {
-			go func(pm *program.ProgramManager) {
-				s.log.Debugf("Stopping program manager: %s", pm.Name)
-				pm.Stop()
-			}(pm)
-		}
-	}()
-
-	ctl, err := ctl.NewEmbeddedController(s)
+	ctl, err := controller.NewEmbeddedController(s)
 	if err != nil {
-		// TODO
-	} else if err := ctl.Start(); err != nil {
-		// TODO
+		s.log.Error("failed to create controller:", err)
+		fmt.Fprintln(os.Stderr, "Error: failed to create controller:", err)
+	} else {
+		go func() {
+			ctl.Start()
+			s.ctlExited <- struct{}{}
+		}()
+	}
+
+	select {
+	case <-s.ctlExited:
+		s.log.Info("controller exited, shutting down supervisor")
+	case sig := <-quitSigs:
+		s.log.Infof("received signal: %s, shutting down supervisor", sig)
+	}
+
+	for _, pm := range s.programManagers {
+		go func(pm *program.ProgramManager) {
+			pm.Stop()
+		}(pm)
 	}
 
 	wg.Wait()

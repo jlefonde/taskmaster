@@ -1,4 +1,4 @@
-package ctl
+package controller
 
 import (
 	"fmt"
@@ -12,6 +12,7 @@ type Controller struct {
 	supervisor SupervisorInterface
 	rl         *readline.Instance
 	actions    map[Action]*actionMetadata
+	running    bool
 }
 
 type SupervisorInterface interface {
@@ -45,6 +46,7 @@ func NewEmbeddedController(supervisor SupervisorInterface) (*Controller, error) 
 		supervisor: supervisor,
 		rl:         rl,
 		actions:    actions,
+		running:    true,
 	}, nil
 }
 
@@ -57,12 +59,10 @@ func newCompleter(actions map[Action]*actionMetadata) *readline.PrefixCompleter 
 	return readline.NewPrefixCompleter(allActions...)
 }
 
-func (ctl *Controller) Start() error {
+func (ctl *Controller) Start() {
 	defer ctl.rl.Close()
 
-	ctl.rl.CaptureExitSignal()
-
-	for {
+	for ctl.running {
 		line, err := ctl.rl.Readline()
 		if err == readline.ErrInterrupt {
 			if len(line) == 0 {
@@ -84,12 +84,12 @@ func (ctl *Controller) Start() error {
 
 		action, ok := ctl.actions[actionName]
 		if !ok {
-			fmt.Printf("Unknown command: %s\n", actionName)
+			fmt.Printf("*** Unknown syntax: '%s'\n", actionName)
 			continue
 		}
 
-		action.handler(ctl, lineFields[1:])
+		if action.handler != nil {
+			action.handler(ctl, lineFields[1:])
+		}
 	}
-
-	return nil
 }
