@@ -22,19 +22,28 @@ type ProcessExitInfo struct {
 }
 
 type ManagedProcess struct {
-	Num             int
-	Cmd             *exec.Cmd
-	State           State
-	StartTime       time.Time
-	StopTime        time.Time
-	ExitTime        time.Time
-	NextRestartTime time.Time
-	RestartCount    int
-	ExitChan        chan ProcessExitInfo
-	Stdout          *os.File
-	Stderr          *os.File
-	StdoutLogFile   string
-	StderrLogFile   string
+	Num              int
+	Cmd              *exec.Cmd
+	State            State
+	RestartRequested bool
+	StartTime        time.Time
+	StopTime         time.Time
+	ExitTime         time.Time
+	NextRestartTime  time.Time
+	RestartCount     int
+	ExitChan         chan ProcessExitInfo
+	Stdout           *os.File
+	Stderr           *os.File
+	StdoutLogFile    string
+	StderrLogFile    string
+}
+
+func newManagedProcess(processNum int, exitChan chan ProcessExitInfo) *ManagedProcess {
+	return &ManagedProcess{
+		Num:      processNum,
+		State:    STOPPED,
+		ExitChan: exitChan,
+	}
 }
 
 func (mp *ManagedProcess) getDefaultLogFile(pm *ProgramManager, outFile string) string {
@@ -98,6 +107,7 @@ func (mp *ManagedProcess) newCmd(config *config.Program) (*exec.Cmd, error) {
 	if config.Umask != nil {
 		cmd = exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", *config.Umask, config.Cmd))
 	} else {
+		// TODO: use directly config.Cmd
 		cmd = exec.Command("sh", "-c", config.Cmd)
 	}
 
@@ -118,6 +128,7 @@ func (mp *ManagedProcess) newCmd(config *config.Program) (*exec.Cmd, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)},
 		Setpgid:    true,
+		Pgid:       0,
 	}
 
 	cmd.Stdout = mp.Stdout

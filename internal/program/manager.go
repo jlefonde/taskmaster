@@ -107,6 +107,10 @@ func newTransitions() *map[State]map[Event]Transition {
 		STOPPING: {
 			PROCESS_STOPPED: {To: STOPPED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, STOPPING, STOPPED)
+				if mp.RestartRequested {
+					mp.RestartRequested = false
+					return START
+				}
 				return ""
 			}},
 		},
@@ -119,7 +123,7 @@ func newTransitions() *map[State]map[Event]Transition {
 		FATAL: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, FATAL, STARTING)
-				return ""
+				return pm.startProcess(mp)
 			}},
 		},
 	}
@@ -133,18 +137,17 @@ func (pm *ProgramManager) getProcessName(processNum int) string {
 	return fmt.Sprintf("%s:%s_%02d", pm.Name, pm.Name, processNum)
 }
 
-func (pm *ProgramManager) sendEvent(event Event, mp *ManagedProcess) error {
+func (pm *ProgramManager) sendEvent(event Event, mp *ManagedProcess) {
 	transition, found := (*pm.Transitions)[mp.State][event]
 	if !found {
-		return fmt.Errorf("invalid event '%q' for state '%q'", event, mp.State)
+		pm.Log.Warningf("invalid event '%s' for state '%s'", event, mp.State)
+		return
 	}
 
 	mp.State = transition.To
 	if event := transition.Action(pm, mp); event != "" {
-		return pm.sendEvent(event, mp)
+		pm.sendEvent(event, mp)
 	}
-
-	return nil
 }
 
 func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
@@ -244,16 +247,48 @@ func (pm *ProgramManager) allProcessesTerminated() bool {
 	return true
 }
 
+func (pm *ProgramManager) StartAllProcesses() {
+	for processName, mp := range pm.Processes {
+		switch mp.State {
+		case RUNNING, STARTING:
+			pm.Log.Infof("%s already %s", processName, mp.State)
+			continue
+		default:
+			pm.sendEvent(START, mp)
+		}
+	}
+}
+
+func (pm *ProgramManager) StopAllProcesses() {
+	for processName, mp := range pm.Processes {
+		switch mp.State {
+		case STOPPED, EXITED, FATAL, BACKOFF:
+			pm.Log.Infof("%s already %s", processName, mp.State)
+			continue
+		default:
+			pm.sendEvent(STOP, mp)
+		}
+	}
+}
+
+func (pm *ProgramManager) RestartAllProcesses() {
+	for _, mp := range pm.Processes {
+		switch mp.State {
+		case RUNNING, STARTING:
+			mp.RestartRequested = true
+			pm.sendEvent(STOP, mp)
+		case STOPPED, EXITED, FATAL, BACKOFF:
+			pm.sendEvent(START, mp)
+		}
+	}
+}
+
 func (pm *ProgramManager) Run() {
 	pm.Log.Debugf("%s: %+v\n\n", pm.Name, pm.Config)
 
 	for processNum := range pm.Config.NumProcs {
 		processName := pm.getProcessName(processNum)
-		pm.Processes[processName] = &ManagedProcess{
-			Num:      processNum,
-			State:    STOPPED,
-			ExitChan: pm.ExitChan,
-		}
+		pm.Processes[processName] = newManagedProcess(processNum, pm.ExitChan)
 
 		if pm.Config.AutoStart {
 			pm.sendEvent(START, pm.Processes[processName])
@@ -269,6 +304,7 @@ func (pm *ProgramManager) Run() {
 			pm.initiateShutdown()
 
 			if pm.allProcessesTerminated() {
+				pm.Log.Infof("stopped program manager: %s", pm.Name)
 				return
 			}
 		case exit := <-pm.ExitChan:

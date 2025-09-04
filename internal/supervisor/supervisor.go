@@ -66,6 +66,36 @@ func (s *Supervisor) GetProgramNames() func(string) []string {
 	}
 }
 
+func (s *Supervisor) StartProgram(programName string) error {
+	pm, ok := s.programManagers[programName]
+	if !ok {
+		return fmt.Errorf("unknown program: '%s'", programName)
+	}
+
+	pm.StartAllProcesses()
+	return nil
+}
+
+func (s *Supervisor) StopProgram(programName string) error {
+	pm, ok := s.programManagers[programName]
+	if !ok {
+		return fmt.Errorf("unknown program: '%s'", programName)
+	}
+
+	pm.StopAllProcesses()
+	return nil
+}
+
+func (s *Supervisor) RestartProgram(programName string) error {
+	pm, ok := s.programManagers[programName]
+	if !ok {
+		return fmt.Errorf("unknown program: '%s'", programName)
+	}
+
+	pm.RestartAllProcesses()
+	return nil
+}
+
 func (s *Supervisor) Run() {
 	if !s.config.Taskmasterd.NoCleanup {
 		if err := cleanupLogFiles(s.log, s.config.Taskmasterd.ChildLogDir); err != nil {

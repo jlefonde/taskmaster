@@ -69,26 +69,36 @@ func getActionNames(actions map[Action]*actionMetadata) func(string) []string {
 }
 
 func startAction(ctl *Controller, lineFields []string) {
-	if len(lineFields) > 1 {
-		// for program := range lineFields {
-		// 	// ctl.supervisor.StartProgram(lineFields[1])
-		// }
+	if len(lineFields) >= 1 {
+		for _, programName := range lineFields {
+			if err := ctl.supervisor.StartProgram(programName); err != nil {
+				fmt.Printf("*** %v\n", err)
+			}
+		}
 	} else {
 		// ctl.supervisor.StartAllPrograms()
 	}
 }
 
 func stopAction(ctl *Controller, lineFields []string) {
-	if len(lineFields) > 1 {
-		// ctl.supervisor.StopProgram(lineFields[1])
+	if len(lineFields) >= 1 {
+		for _, programName := range lineFields {
+			if err := ctl.supervisor.StopProgram(programName); err != nil {
+				fmt.Printf("*** %v\n", err)
+			}
+		}
 	} else {
-		// ctl.supervisor.StopAllPrograms()
+		// ctl.supervisor.StartAllPrograms()
 	}
 }
 
 func restartAction(ctl *Controller, lineFields []string) {
-	if len(lineFields) > 1 {
-		// ctl.supervisor.StartProgram(lineFields[1])
+	if len(lineFields) >= 1 {
+		for _, programName := range lineFields {
+			if err := ctl.supervisor.RestartProgram(programName); err != nil {
+				fmt.Printf("*** %v\n", err)
+			}
+		}
 	} else {
 		// ctl.supervisor.StartAllPrograms()
 	}
@@ -136,14 +146,14 @@ func helpAction(ctl *Controller, lineFields []string) {
 	} else if len(lineFields) == 1 {
 		action, ok := ctl.actions[Action(lineFields[0])]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "*** No help available for '%s'\n", lineFields[0])
-			fmt.Fprintln(os.Stderr, "*** Type 'help' for a list of available actions")
+			fmt.Fprintf(os.Stderr, "*** no help available for '%v'\n", lineFields[0])
+			fmt.Fprintln(os.Stderr, "*** type 'help' for a list of available actions")
 			return
 		}
 
 		action.helper()
 	} else {
-		fmt.Fprintln(os.Stderr, "*** Invalid help syntax. Use: help <action>")
+		fmt.Fprintln(os.Stderr, "*** invalid help syntax. Use: help <action>")
 	}
 }
 

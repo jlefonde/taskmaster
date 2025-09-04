@@ -17,11 +17,11 @@ type Controller struct {
 
 type SupervisorInterface interface {
 	GetProgramNames() func(string) []string
-	// StartProgram(name string) error
+	StartProgram(name string) error
 	// StartAllPrograms() error
-	// StopProgram(name string) error
+	StopProgram(name string) error
 	// StopAllPrograms() error
-	// RestartProgram(name string) error
+	RestartProgram(name string) error
 	// RestartAllPrograms() error
 	// GetStatus(name string) (string, error)
 	// GetAllStatus(name string) (string, error)
