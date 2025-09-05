@@ -283,6 +283,22 @@ func (pm *ProgramManager) RestartAllProcesses() {
 	}
 }
 
+func (pm *ProgramManager) checkProcessStates() {
+	for _, mp := range pm.Processes {
+		go func(mp *ManagedProcess) {
+			if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
+				pm.sendEvent(PROCESS_STARTED, mp)
+			} else if mp.State == STOPPING && mp.hasStopTimeoutExpired(pm.Config.StopSecs) {
+				pm.forceStop(mp)
+			} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) && !pm.Terminating {
+				pm.sendEvent(START, mp)
+			} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) && !pm.Terminating {
+				pm.sendEvent(START, mp)
+			}
+		}(mp)
+	}
+}
+
 func (pm *ProgramManager) Run() {
 	pm.Log.Debugf("%s: %+v\n\n", pm.Name, pm.Config)
 
@@ -317,17 +333,7 @@ func (pm *ProgramManager) Run() {
 				pm.sendEvent(PROCESS_EXITED, mp)
 			}
 		case <-ticker.C:
-			for _, mp := range pm.Processes {
-				if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
-					pm.sendEvent(PROCESS_STARTED, mp)
-				} else if mp.State == STOPPING && mp.hasStopTimeoutExpired(pm.Config.StopSecs) {
-					pm.forceStop(mp)
-				} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) && !pm.Terminating {
-					pm.sendEvent(START, mp)
-				} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) && !pm.Terminating {
-					pm.sendEvent(START, mp)
-				}
-			}
+			pm.checkProcessStates()
 		}
 	}
 }

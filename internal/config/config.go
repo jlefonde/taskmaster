@@ -437,7 +437,7 @@ func decodeRawMap(configMap map[string]any, key string, result any, decodeHook m
 	return nil
 }
 
-func parseTaskmasterd(configMap map[string]any, config *Config) error {
+func (config *Config) parseTaskmasterd(configMap map[string]any) error {
 	if err := decodeRawMap(configMap, "taskmasterd", &config.Taskmasterd, taskmasterdHook()); err != nil {
 		return err
 	}
@@ -449,7 +449,7 @@ func parseTaskmasterd(configMap map[string]any, config *Config) error {
 	return nil
 }
 
-func parsePrograms(configMap map[string]any, config *Config) error {
+func (config *Config) parsePrograms(configMap map[string]any) error {
 	if err := decodeRawMap(configMap, "programs", &config.Programs, programsHook()); err != nil {
 		return err
 	}
@@ -464,7 +464,7 @@ func parsePrograms(configMap map[string]any, config *Config) error {
 	return nil
 }
 
-func taskmasterdFromContext(ctx *Context) (*Taskmasterd, error) {
+func newTaskmasterd(ctx *Context) (*Taskmasterd, error) {
 	taskmasterd := Taskmasterd{
 		NoDaemon:    ctx.NoDaemon,
 		NoCleanup:   ctx.NoCleanup,
@@ -489,7 +489,9 @@ func taskmasterdFromContext(ctx *Context) (*Taskmasterd, error) {
 	return &taskmasterd, nil
 }
 
-func overrideTaskmasterd(base *Taskmasterd, override *Taskmasterd) {
+func (config *Config) overrideTaskmasterd(override *Taskmasterd) {
+	base := &config.Taskmasterd
+
 	if override.NoDaemon {
 		base.NoDaemon = override.NoDaemon
 	}
@@ -511,7 +513,7 @@ func overrideTaskmasterd(base *Taskmasterd, override *Taskmasterd) {
 	}
 }
 
-func parseConfig(config *Config) error {
+func (config *Config) parse() error {
 	conf, err := readConfigFile(config.Path)
 	if err != nil {
 		return err
@@ -527,31 +529,32 @@ func parseConfig(config *Config) error {
 		return errors.New("configuration file is not a valid YAML")
 	}
 
-	if err := parseTaskmasterd(configMap, config); err != nil {
+	if err := config.parseTaskmasterd(configMap); err != nil {
 		return err
 	}
 
-	if err := parsePrograms(configMap, config); err != nil {
+	if err := config.parsePrograms(configMap); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func Parse(ctx *Context) (*Config, error) {
-	var config Config
-	config.Path = ctx.ConfigPath
+func NewConfig(ctx *Context) (*Config, error) {
+	config := Config{
+		Path: ctx.ConfigPath,
+	}
 
-	taskmasterd, err := taskmasterdFromContext(ctx)
+	taskmasterd, err := newTaskmasterd(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse configuration flags: %w", err)
 	}
 
-	if err := parseConfig(&config); err != nil {
+	if err := config.parse(); err != nil {
 		return nil, fmt.Errorf("failed to parse configuration file: %w", err)
 	}
 
-	overrideTaskmasterd(&config.Taskmasterd, taskmasterd)
+	config.overrideTaskmasterd(taskmasterd)
 
 	return &config, nil
 }

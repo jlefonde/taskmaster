@@ -53,9 +53,9 @@ func init() {
 func main() {
 	flag.Parse()
 
-	config, err := config.Parse(&ctx)
+	config, err := config.NewConfig(&ctx)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
+		fmt.Fprintln(os.Stderr, "Error: failed to create config:", err)
 		os.Exit(1)
 	}
 
