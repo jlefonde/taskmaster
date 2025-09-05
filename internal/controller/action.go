@@ -44,10 +44,10 @@ func newActionMetadata(name string, helper actionHelper, handler actionHandler, 
 
 func newActions(supervisor SupervisorInterface) map[Action]*actionMetadata {
 	actions := map[Action]*actionMetadata{
-		START:   newActionMetadata(string(START), startHelper, startAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
-		STOP:    newActionMetadata(string(STOP), stopHelper, stopAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
-		RESTART: newActionMetadata(string(RESTART), restartHelper, restartAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
-		STATUS:  newActionMetadata(string(STATUS), statusHelper, statusAction, readline.PcItemDynamic(supervisor.GetProgramNames())),
+		START:   newActionMetadata(string(START), startHelper, startAction, readline.PcItemDynamic(supervisor.GetProcessNames())),
+		STOP:    newActionMetadata(string(STOP), stopHelper, stopAction, readline.PcItemDynamic(supervisor.GetProcessNames())),
+		RESTART: newActionMetadata(string(RESTART), restartHelper, restartAction, readline.PcItemDynamic(supervisor.GetProcessNames())),
+		STATUS:  newActionMetadata(string(STATUS), statusHelper, statusAction, readline.PcItemDynamic(supervisor.GetProcessNames())),
 		UPDATE:  newActionMetadata(string(UPDATE), updateHelper, updateAction, nil),
 		QUIT:    newActionMetadata(string(QUIT), quitHelper, shutdownAction, nil),
 		EXIT:    newActionMetadata(string(EXIT), exitHelper, shutdownAction, nil),
@@ -69,39 +69,19 @@ func getActionNames(actions map[Action]*actionMetadata) func(string) []string {
 }
 
 func startAction(ctl *Controller, lineFields []string) {
-	if len(lineFields) >= 1 {
-		for _, programName := range lineFields {
-			if err := ctl.supervisor.StartProgram(programName); err != nil {
-				fmt.Printf("*** %v\n", err)
-			}
+	for _, processName := range lineFields {
+		if err := ctl.supervisor.StartProcess(processName); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 		}
-	} else {
-		// ctl.supervisor.StartAllPrograms()
 	}
 }
 
 func stopAction(ctl *Controller, lineFields []string) {
-	if len(lineFields) >= 1 {
-		for _, programName := range lineFields {
-			if err := ctl.supervisor.StopProgram(programName); err != nil {
-				fmt.Printf("*** %v\n", err)
-			}
-		}
-	} else {
-		// ctl.supervisor.StartAllPrograms()
-	}
+
 }
 
 func restartAction(ctl *Controller, lineFields []string) {
-	if len(lineFields) >= 1 {
-		for _, programName := range lineFields {
-			if err := ctl.supervisor.RestartProgram(programName); err != nil {
-				fmt.Printf("*** %v\n", err)
-			}
-		}
-	} else {
-		// ctl.supervisor.StartAllPrograms()
-	}
+
 }
 
 func statusAction(ctl *Controller, lineFields []string) {

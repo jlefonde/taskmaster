@@ -55,44 +55,39 @@ func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
 	return nil
 }
 
-func (s *Supervisor) GetProgramNames() func(string) []string {
+func (s *Supervisor) GetProcessNames() func(string) []string {
 	return func(string) []string {
-		var programNames []string
-		for programName := range s.programManagers {
-			programNames = append(programNames, programName)
+		var processNames []string
+		for programName, pm := range s.programManagers {
+			for processName := range pm.Processes {
+				processNames = append(processNames, processName)
+			}
+
+			if pm.Config.NumProcs > 1 {
+				processNames = append(processNames, programName+":*")
+			}
 		}
 
-		return programNames
+		return processNames
 	}
 }
 
-func (s *Supervisor) StartProgram(programName string) error {
+func (s *Supervisor) StartProcess(processName string) error {
+	programName, processNameCut, sepFound := strings.Cut(processName, ":")
 	pm, ok := s.programManagers[programName]
-	if !ok {
-		return fmt.Errorf("unknown program: '%s'", programName)
+	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
+		return fmt.Errorf("%s: ERROR (no such process)", processName)
 	}
 
-	pm.StartAllProcesses()
-	return nil
-}
-
-func (s *Supervisor) StopProgram(programName string) error {
-	pm, ok := s.programManagers[programName]
-	if !ok {
-		return fmt.Errorf("unknown program: '%s'", programName)
+	if processNameCut == "" || processNameCut == "*" {
+		pm.StartAllProcesses()
+		return nil
 	}
 
-	pm.StopAllProcesses()
-	return nil
-}
-
-func (s *Supervisor) RestartProgram(programName string) error {
-	pm, ok := s.programManagers[programName]
-	if !ok {
-		return fmt.Errorf("unknown program: '%s'", programName)
+	if err := pm.StartProcess(processName); err != nil {
+		return err
 	}
 
-	pm.RestartAllProcesses()
 	return nil
 }
 

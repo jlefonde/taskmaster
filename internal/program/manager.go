@@ -247,15 +247,25 @@ func (pm *ProgramManager) allProcessesTerminated() bool {
 	return true
 }
 
+func (pm *ProgramManager) StartProcess(processName string) error {
+	mp, ok := pm.Processes[processName]
+	if !ok {
+		return fmt.Errorf("%s: ERROR (no such process)", processName)
+	}
+
+	switch mp.State {
+	case RUNNING, STARTING:
+		pm.Log.Infof("%s already %s", processName, mp.State)
+	default:
+		pm.sendEvent(START, mp)
+	}
+
+	return nil
+}
+
 func (pm *ProgramManager) StartAllProcesses() {
-	for processName, mp := range pm.Processes {
-		switch mp.State {
-		case RUNNING, STARTING:
-			pm.Log.Infof("%s already %s", processName, mp.State)
-			continue
-		default:
-			pm.sendEvent(START, mp)
-		}
+	for processName := range pm.Processes {
+		pm.StartProcess(processName)
 	}
 }
 
@@ -283,19 +293,15 @@ func (pm *ProgramManager) RestartAllProcesses() {
 	}
 }
 
-func (pm *ProgramManager) checkProcessStates() {
-	for _, mp := range pm.Processes {
-		go func(mp *ManagedProcess) {
-			if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
-				pm.sendEvent(PROCESS_STARTED, mp)
-			} else if mp.State == STOPPING && mp.hasStopTimeoutExpired(pm.Config.StopSecs) {
-				pm.forceStop(mp)
-			} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) && !pm.Terminating {
-				pm.sendEvent(START, mp)
-			} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) && !pm.Terminating {
-				pm.sendEvent(START, mp)
-			}
-		}(mp)
+func (pm *ProgramManager) checkProcessState(mp *ManagedProcess) {
+	if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
+		pm.sendEvent(PROCESS_STARTED, mp)
+	} else if mp.State == STOPPING && mp.hasStopTimeoutExpired(pm.Config.StopSecs) {
+		pm.forceStop(mp)
+	} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) && !pm.Terminating {
+		pm.sendEvent(START, mp)
+	} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) && !pm.Terminating {
+		pm.sendEvent(START, mp)
 	}
 }
 
@@ -333,7 +339,9 @@ func (pm *ProgramManager) Run() {
 				pm.sendEvent(PROCESS_EXITED, mp)
 			}
 		case <-ticker.C:
-			pm.checkProcessStates()
+			for _, mp := range pm.Processes {
+				go pm.checkProcessState(mp)
+			}
 		}
 	}
 }
