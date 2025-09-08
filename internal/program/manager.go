@@ -41,6 +41,7 @@ type ProgramManager struct {
 	ChildLogDir string
 	Log         *logger.Logger
 	Processes   map[string]*ManagedProcess
+	Requests    map[string]chan<- string
 	Transitions *map[State]map[Event]Transition
 	StopChan    chan struct{}
 	ExitChan    chan ProcessExitInfo
@@ -151,6 +152,12 @@ func (pm *ProgramManager) sendEvent(event Event, mp *ManagedProcess) {
 }
 
 func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
+	replyChan, ok := pm.Requests[pm.getProcessName(mp.Num)]
+	if ok {
+		replyChan <- fmt.Sprintf("%s: started", pm.getProcessName(mp.Num))
+		delete(pm.Requests, pm.getProcessName(mp.Num))
+	}
+
 	if err := mp.setProcessStdLogs(pm); err != nil {
 		pm.Log.Warningf("failed to set logs file for program '%s' (process %d): %v", pm.Name, mp.Num, err)
 		return PROCESS_EXITED
@@ -247,48 +254,41 @@ func (pm *ProgramManager) allProcessesTerminated() bool {
 	return true
 }
 
-func (pm *ProgramManager) StartProcess(processName string) error {
+func (pm *ProgramManager) StartProcess(processName string, replyChan chan<- string) {
 	mp, ok := pm.Processes[processName]
 	if !ok {
-		return fmt.Errorf("%s: ERROR (no such process)", processName)
+		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
+		return
 	}
 
 	switch mp.State {
 	case RUNNING, STARTING:
 		pm.Log.Infof("%s already %s", processName, mp.State)
+		replyChan <- fmt.Sprintf("%s: already %s", processName, mp.State)
 	default:
+		pm.Requests[processName] = replyChan
 		pm.sendEvent(START, mp)
 	}
-
-	return nil
 }
 
-func (pm *ProgramManager) StartAllProcesses() {
-	for processName := range pm.Processes {
-		pm.StartProcess(processName)
-	}
-}
-
-func (pm *ProgramManager) StopAllProcesses() {
+func (pm *ProgramManager) StartAllProcesses(replyChan chan<- string) {
 	for processName, mp := range pm.Processes {
 		switch mp.State {
-		case STOPPED, EXITED, FATAL, BACKOFF:
-			pm.Log.Infof("%s already %s", processName, mp.State)
-			continue
-		default:
-			pm.sendEvent(STOP, mp)
-		}
-	}
-}
-
-func (pm *ProgramManager) RestartAllProcesses() {
-	for _, mp := range pm.Processes {
-		switch mp.State {
 		case RUNNING, STARTING:
-			mp.RestartRequested = true
-			pm.sendEvent(STOP, mp)
-		case STOPPED, EXITED, FATAL, BACKOFF:
+			pm.Log.Infof("%s already %s", processName, mp.State)
+			replyChan <- fmt.Sprintf("%s: already %s", processName, mp.State)
+		default:
+			processReplyChan := make(chan string)
+			pm.Requests[processName] = processReplyChan
 			pm.sendEvent(START, mp)
+			
+			select {
+			case reply := <-processReplyChan:
+				replyChan <- reply
+			case <-time.After(10 * time.Second):
+				replyChan <- fmt.Sprintf("%s: ERROR (timeout)", processName)
+				delete(pm.Requests, processName)
+			}
 		}
 	}
 }

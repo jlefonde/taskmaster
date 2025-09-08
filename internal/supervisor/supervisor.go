@@ -72,23 +72,20 @@ func (s *Supervisor) GetProcessNames() func(string) []string {
 	}
 }
 
-func (s *Supervisor) StartProcess(processName string) error {
+func (s *Supervisor) StartRequest(processName string, replyChan chan<- string) {
 	programName, processNameCut, sepFound := strings.Cut(processName, ":")
 	pm, ok := s.programManagers[programName]
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
-		return fmt.Errorf("%s: ERROR (no such process)", processName)
+		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
+		return
 	}
 
 	if processNameCut == "" || processNameCut == "*" {
-		pm.StartAllProcesses()
-		return nil
+		pm.StartAllProcesses(replyChan)
+		return
 	}
 
-	if err := pm.StartProcess(processName); err != nil {
-		return err
-	}
-
-	return nil
+	pm.StartProcess(processName, replyChan)
 }
 
 func (s *Supervisor) Run() {

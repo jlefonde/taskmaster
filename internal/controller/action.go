@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/chzyer/readline"
 )
@@ -69,9 +70,17 @@ func getActionNames(actions map[Action]*actionMetadata) func(string) []string {
 }
 
 func startAction(ctl *Controller, lineFields []string) {
+	// TODO: handle only "start" to start all processes
+
 	for _, processName := range lineFields {
-		if err := ctl.supervisor.StartProcess(processName); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+		replyChan := make(chan string)
+		ctl.supervisor.StartRequest(processName, replyChan)
+
+		select {
+			case reply := <-replyChan:
+				fmt.Println(reply)
+			case <-time.After(5 * time.Second):
+				fmt.Println(processName + ": ERROR (timeout)")
 		}
 	}
 }

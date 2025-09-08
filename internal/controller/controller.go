@@ -17,7 +17,7 @@ type Controller struct {
 
 type SupervisorInterface interface {
 	GetProcessNames() func(string) []string
-	StartProcess(name string) error
+	StartRequest(processName string, replyChan chan<- string)
 	// StopProgram(name string) error
 	// RestartProgram(name string) error
 	// GetStatus(name string) (string, error)
