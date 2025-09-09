@@ -81,7 +81,7 @@ func (ctl *Controller) Start() {
 
 		action, ok := ctl.actions[actionName]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "*** unknown syntax: '%s'\n", actionName)
+			fmt.Fprintln(os.Stderr, "*** unknown syntax:", actionName)
 			continue
 		}
 

@@ -70,7 +70,7 @@ func getActionNames(actions map[Action]*actionMetadata) func(string) []string {
 
 func startAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) == 0 {
-		fmt.Fprintln(os.Stderr, "*** invalid syntax: 'start'")
+		fmt.Fprintln(os.Stderr, "*** invalid start syntax")
 		startHelper()
 		return
 	}
@@ -86,7 +86,7 @@ func startAction(ctl *Controller, lineFields []string) {
 
 func stopAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) == 0 {
-		fmt.Fprintln(os.Stderr, "*** invalid syntax: 'stop'")
+		fmt.Fprintln(os.Stderr, "*** invalid stop syntax")
 		stopHelper()
 		return
 	}
@@ -122,9 +122,9 @@ func shutdownAction(ctl *Controller, lineFields []string) {
 
 func helpAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) == 0 {
-		fmt.Println("┌───────────────── Available Actions ─────────────────┐")
-		fmt.Println("│ Type 'help <action>'                                │")
-		fmt.Println("└─────────────────────────────────────────────────────┘")
+		fmt.Println("┌────────────────────── Available Actions ─────────────────────┐")
+		fmt.Println("│ Type 'help <action>'                                         │")
+		fmt.Println("└──────────────────────────────────────────────────────────────┘")
 
 		actionNames := make([]string, 0, len(ctl.actions))
 		for actionName := range ctl.actions {
@@ -146,7 +146,7 @@ func helpAction(ctl *Controller, lineFields []string) {
 	} else if len(lineFields) == 1 {
 		action, ok := ctl.actions[Action(lineFields[0])]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "*** no help available for '%v'\n", lineFields[0])
+			fmt.Fprintln(os.Stderr, "*** no help available for", lineFields[0])
 			fmt.Fprintln(os.Stderr, "*** type 'help' for a list of available actions")
 			return
 		}
