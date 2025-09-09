@@ -2,6 +2,7 @@ package program
 
 import (
 	"fmt"
+	"strings"
 	"syscall"
 	"time"
 
@@ -55,6 +56,7 @@ func NewProgramManager(programName string, programConfig *config.Program, childL
 		ChildLogDir: childLogDir,
 		Log:         log,
 		Processes:   make(map[string]*ManagedProcess),
+		Requests:    make(map[string]chan<- string),
 		Transitions: newTransitions(),
 		StopChan:    make(chan struct{}),
 		ExitChan:    make(chan ProcessExitInfo),
@@ -79,6 +81,10 @@ func newTransitions() *map[State]map[Event]Transition {
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, STARTING, STOPPING)
 				return pm.stopProcess(mp)
+			}},
+			PROCESS_FAILED: {To: BACKOFF, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
+				pm.logTransition(mp.Num, STARTING, BACKOFF)
+				return pm.restartProcess(mp)
 			}},
 			PROCESS_EXITED: {To: BACKOFF, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Num, STARTING, BACKOFF)
@@ -151,27 +157,37 @@ func (pm *ProgramManager) sendEvent(event Event, mp *ManagedProcess) {
 	}
 }
 
-func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
-	replyChan, ok := pm.Requests[pm.getProcessName(mp.Num)]
+func (pm *ProgramManager) replyToRequest(mp *ManagedProcess, replyMsg string) {
+	processName := pm.getProcessName(mp.Num)
+	replyChan, ok := pm.Requests[processName]
 	if ok {
-		replyChan <- fmt.Sprintf("%s: started", pm.getProcessName(mp.Num))
-		delete(pm.Requests, pm.getProcessName(mp.Num))
+		replyChan <- fmt.Sprintf("%s: %s", processName, replyMsg)
+		delete(pm.Requests, processName)
 	}
+}
+
+func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
+	mp.StartTime = time.Time{}
 
 	if err := mp.setProcessStdLogs(pm); err != nil {
 		pm.Log.Warningf("failed to set logs file for program '%s' (process %d): %v", pm.Name, mp.Num, err)
-		return PROCESS_EXITED
+		pm.replyToRequest(mp, "ERROR (failed to start)")
+		return PROCESS_FAILED
 	}
 
 	cmd, err := mp.newCmd(pm.Config)
 	if err != nil {
 		pm.Log.Warningf("prepare cmd failed for program '%s' (process %d): %v", pm.Name, mp.Num, err)
-		return PROCESS_EXITED
+		pm.replyToRequest(mp, "ERROR (failed to start)")
+		return PROCESS_FAILED
 	}
 
 	if err := cmd.Start(); err != nil {
-		return PROCESS_EXITED
+		pm.replyToRequest(mp, "ERROR (failed to start)")
+		return PROCESS_FAILED
 	}
+
+	pm.replyToRequest(mp, "started")
 
 	mp.StartTime = time.Now()
 	mp.Cmd = cmd
@@ -264,7 +280,7 @@ func (pm *ProgramManager) StartProcess(processName string, replyChan chan<- stri
 	switch mp.State {
 	case RUNNING, STARTING:
 		pm.Log.Infof("%s already %s", processName, mp.State)
-		replyChan <- fmt.Sprintf("%s: already %s", processName, mp.State)
+		replyChan <- fmt.Sprintf("%s: ERROR (already %s)", processName, strings.ToLower(string(mp.State)))
 	default:
 		pm.Requests[processName] = replyChan
 		pm.sendEvent(START, mp)
@@ -272,25 +288,27 @@ func (pm *ProgramManager) StartProcess(processName string, replyChan chan<- stri
 }
 
 func (pm *ProgramManager) StartAllProcesses(replyChan chan<- string) {
+	processReplyChan := make(chan string, pm.Config.NumProcs)
+
 	for processName, mp := range pm.Processes {
 		switch mp.State {
 		case RUNNING, STARTING:
 			pm.Log.Infof("%s already %s", processName, mp.State)
-			replyChan <- fmt.Sprintf("%s: already %s", processName, mp.State)
+			processReplyChan <- fmt.Sprintf("%s: ERROR (already %s)", processName, strings.ToLower(string(mp.State)))
 		default:
-			processReplyChan := make(chan string)
 			pm.Requests[processName] = processReplyChan
 			pm.sendEvent(START, mp)
-			
-			select {
-			case reply := <-processReplyChan:
-				replyChan <- reply
-			case <-time.After(10 * time.Second):
-				replyChan <- fmt.Sprintf("%s: ERROR (timeout)", processName)
-				delete(pm.Requests, processName)
-			}
 		}
 	}
+
+	var replies []string
+	for i := 0; i < pm.Config.NumProcs; i++ {
+		reply := <-processReplyChan
+		replies = append(replies, reply)
+	}
+
+	replyMsg := strings.Join(replies, "\n")
+	replyChan <- replyMsg
 }
 
 func (pm *ProgramManager) checkProcessState(mp *ManagedProcess) {

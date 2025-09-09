@@ -80,7 +80,7 @@ func (s *Supervisor) StartRequest(processName string, replyChan chan<- string) {
 		return
 	}
 
-	if processNameCut == "" || processNameCut == "*" {
+	if (processNameCut == "" || processNameCut == "*") && pm.Config.NumProcs > 1 {
 		pm.StartAllProcesses(replyChan)
 		return
 	}
