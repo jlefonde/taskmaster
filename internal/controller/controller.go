@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/chzyer/readline"
@@ -18,9 +19,7 @@ type Controller struct {
 type SupervisorInterface interface {
 	GetProcessNames() func(string) []string
 	StartRequest(processName string, replyChan chan<- string)
-	StartAllRequest(replyChan chan<- string)
 	StopRequest(processName string, replyChan chan<- string)
-	StopAllRequest(replyChan chan<- string)
 	// RestartProgram(name string) error
 	// GetStatus(name string) (string, error)
 }
@@ -82,7 +81,7 @@ func (ctl *Controller) Start() {
 
 		action, ok := ctl.actions[actionName]
 		if !ok {
-			fmt.Printf("*** Unknown syntax: '%s'\n", actionName)
+			fmt.Fprintf(os.Stderr, "*** unknown syntax: '%s'\n", actionName)
 			continue
 		}
 

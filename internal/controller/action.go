@@ -70,37 +70,33 @@ func getActionNames(actions map[Action]*actionMetadata) func(string) []string {
 
 func startAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) == 0 {
+		fmt.Fprintln(os.Stderr, "*** invalid syntax: 'start'")
+		startHelper()
+		return
+	}
+
+	for _, processName := range lineFields {
 		replyChan := make(chan string, 1)
-		ctl.supervisor.StartAllRequest(replyChan)
+		ctl.supervisor.StartRequest(processName, replyChan)
 
 		reply := <-replyChan
 		fmt.Println(reply)
-	} else {
-		for _, processName := range lineFields {
-			replyChan := make(chan string, 1)
-			ctl.supervisor.StartRequest(processName, replyChan)
-
-			reply := <-replyChan
-			fmt.Println(reply)
-		}
 	}
 }
 
 func stopAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) == 0 {
+		fmt.Fprintln(os.Stderr, "*** invalid syntax: 'stop'")
+		stopHelper()
+		return
+	}
+
+	for _, processName := range lineFields {
 		replyChan := make(chan string, 1)
-		ctl.supervisor.StopAllRequest(replyChan)
+		ctl.supervisor.StopRequest(processName, replyChan)
 
 		reply := <-replyChan
 		fmt.Println(reply)
-	} else {
-		for _, processName := range lineFields {
-			replyChan := make(chan string, 1)
-			ctl.supervisor.StopRequest(processName, replyChan)
-
-			reply := <-replyChan
-			fmt.Println(reply)
-		}
 	}
 }
 
@@ -162,42 +158,42 @@ func helpAction(ctl *Controller, lineFields []string) {
 }
 
 func startHelper() {
-	fmt.Printf("start\t\t\tStart all processes\n")
-	fmt.Printf("start <name>\t\tStart a process\n")
-	fmt.Printf("start <name> <name>\tStart multiple processes\n")
+	fmt.Println("start all\t\tStart all processes")
+	fmt.Println("start <name>\t\tStart a process")
+	fmt.Println("start <name> <name>\tStart multiple processes")
 }
 
 func stopHelper() {
-	fmt.Printf("stop\t\t\tStop all processes\n")
-	fmt.Printf("stop <name>\t\tStop a process\n")
-	fmt.Printf("stop <name> <name>\tStop multiple processes\n")
+	fmt.Println("stop all\t\tStop all processes")
+	fmt.Println("stop <name>\t\tStop a process")
+	fmt.Println("stop <name> <name>\tStop multiple processes")
 }
 
 func restartHelper() {
-	fmt.Printf("restart\t\t\tRestart all processes\n")
-	fmt.Printf("restart <name>\t\tRestart a process\n")
-	fmt.Printf("restart <name> <name>\tRestart multiple processes\n")
+	fmt.Println("restart all\t\tRestart all processes")
+	fmt.Println("restart <name>\t\tRestart a process")
+	fmt.Println("restart <name> <name>\tRestart multiple processes")
 }
 
 func statusHelper() {
-	fmt.Printf("status\t\t\tShow status of all processes\n")
-	fmt.Printf("status <name>\t\tShow status of a process\n")
-	fmt.Printf("status <name> <name>\tShow status of multiple processes\n")
+	fmt.Println("status all\t\tShow status of all processes")
+	fmt.Println("status <name>\t\tShow status of a process")
+	fmt.Println("status <name> <name>\tShow status of multiple processes")
 }
 
 func updateHelper() {
-	fmt.Printf("update\t\t\tReload configuration and update processes\n")
+	fmt.Println("update\t\t\tReload configuration and update processes")
 }
 
 func quitHelper() {
-	fmt.Printf("quit\t\tShutdown the supervisor\n")
+	fmt.Println("quit\t\tShutdown the supervisor")
 }
 
 func exitHelper() {
-	fmt.Printf("exit\t\tShutdown the supervisor\n")
+	fmt.Println("exit\t\tShutdown the supervisor")
 }
 
 func helpHelper() {
-	fmt.Printf("help\t\tPrint a list of available actions\n")
-	fmt.Printf("help <action>\tPrint help for <action>\n")
+	fmt.Println("help\t\tPrint a list of available actions")
+	fmt.Println("help <action>\tPrint help for <action>")
 }
