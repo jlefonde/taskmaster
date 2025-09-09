@@ -343,6 +343,16 @@ func (pm *ProgramManager) StopAllProcesses(replyChan chan<- string) {
 	replyChan <- replyMsg
 }
 
+func (pm *ProgramManager) GetProcessStatus(processName string, replyChan chan<- string) *ProcessStatus {
+	mp, ok := pm.Processes[processName]
+	if !ok {
+		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
+		return nil
+	}
+
+	return mp.getStatus(processName)
+}
+
 func (pm *ProgramManager) checkProcessState(mp *ManagedProcess) {
 	if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
 		pm.sendEvent(PROCESS_STARTED, mp)
@@ -356,7 +366,7 @@ func (pm *ProgramManager) checkProcessState(mp *ManagedProcess) {
 }
 
 func (pm *ProgramManager) Run() {
-	pm.Log.Debugf("%s: %+v\n\n", pm.Name, pm.Config)
+	pm.Log.Debugf("%s: %+v\n", pm.Name, pm.Config)
 
 	for processNum := range pm.Config.NumProcs {
 		processName := pm.getProcessName(processNum)

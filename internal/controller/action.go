@@ -105,10 +105,18 @@ func restartAction(ctl *Controller, lineFields []string) {
 }
 
 func statusAction(ctl *Controller, lineFields []string) {
-	if len(lineFields) > 1 {
-		// ctl.supervisor.GetStatus(lineFields[1])
-	} else {
-		// ctl.supervisor.GetAllStatus()
+	if len(lineFields) == 0 {
+		fmt.Fprintln(os.Stderr, "*** invalid status syntax")
+		statusHelper()
+		return
+	}
+
+	for _, processName := range lineFields {
+		replyChan := make(chan string, 1)
+		ctl.supervisor.StatusRequest(processName, replyChan)
+
+		reply := <-replyChan
+		fmt.Println(reply)
 	}
 }
 

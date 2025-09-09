@@ -153,6 +153,28 @@ func (s *Supervisor) StopRequest(processName string, replyChan chan<- string) {
 	pm.StopProcess(processName, replyChan)
 }
 
+func (s *Supervisor) StatusRequest(processName string, replyChan chan<- string) {
+	if processName == "all" {
+		// TODO
+		return
+	}
+
+	programName, processNameCut, sepFound := strings.Cut(processName, ":")
+	pm, ok := s.programManagers[programName]
+	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
+		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
+		return
+	}
+
+	if (processNameCut == "" || processNameCut == "*") && pm.Config.NumProcs > 1 {
+		// TODO
+		return
+	}
+
+	status := pm.GetProcessStatus(processName, replyChan)
+	replyChan <- status.Description
+}
+
 func (s *Supervisor) Run() {
 	if !s.config.Taskmasterd.NoCleanup {
 		if err := cleanupLogFiles(s.log, s.config.Taskmasterd.ChildLogDir); err != nil {
@@ -160,7 +182,7 @@ func (s *Supervisor) Run() {
 		}
 	}
 
-	s.log.Debugf("taskmaster: %+v\n\n", s.config.Taskmasterd)
+	s.log.Debugf("taskmaster: %+v\n", s.config.Taskmasterd)
 
 	quitSigs := make(chan os.Signal, 1)
 	signal.Notify(quitSigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
@@ -179,14 +201,21 @@ func (s *Supervisor) Run() {
 
 	ctl, err := controller.NewEmbeddedController(s)
 	if err != nil {
-		s.log.Error("failed to create controller:", err)
-		fmt.Fprintln(os.Stderr, "Error: failed to create controller:", err)
-	} else {
-		go func() {
-			ctl.Start()
-			s.ctlExited <- struct{}{}
-		}()
+		s.log.Error("failed to create controller: ", err)
+
+		for _, pm := range s.programManagers {
+			go pm.Stop()
+		}
+
+		wg.Wait()
+
+		os.Exit(1)
 	}
+
+	go func() {
+		ctl.Start()
+		close(s.ctlExited)
+	}()
 
 	select {
 	case <-s.ctlExited:
@@ -196,9 +225,7 @@ func (s *Supervisor) Run() {
 	}
 
 	for _, pm := range s.programManagers {
-		go func(pm *program.ProgramManager) {
-			pm.Stop()
-		}(pm)
+		go pm.Stop()
 	}
 
 	wg.Wait()

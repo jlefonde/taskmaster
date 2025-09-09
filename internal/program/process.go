@@ -21,6 +21,12 @@ type ProcessExitInfo struct {
 	Err      error
 }
 
+type ProcessStatus struct {
+	Name        string
+	State       State
+	Description string
+}
+
 type ManagedProcess struct {
 	Num              int
 	Cmd              *exec.Cmd
@@ -160,5 +166,35 @@ func (mp *ManagedProcess) shouldRestart(autoRestart config.AutoRestart, exitCode
 		return true
 	default:
 		return false
+	}
+}
+
+func (mp *ManagedProcess) getDescription() string {
+	switch mp.State {
+	case RUNNING:
+		uptime := time.Since(mp.StartTime)
+		totalSeconds := int(uptime.Seconds())
+		days := totalSeconds / 86400
+		hours := (totalSeconds / 3600) % 24
+		minutes := (totalSeconds / 60) % 60
+		seconds := totalSeconds % 60
+
+		if days > 0 {
+			return fmt.Sprintf("pid %d, uptime %dd %02d:%02d:%02d", mp.Cmd.Process.Pid, days, hours, minutes, seconds)
+		} else {
+			return fmt.Sprintf("pid %d, uptime %02d:%02d:%02d", mp.Cmd.Process.Pid, hours, minutes, seconds)
+		}
+	case EXITED:
+		return ""
+	default:
+		return ""
+	}
+}
+
+func (mp *ManagedProcess) getStatus(processName string) *ProcessStatus {
+	return &ProcessStatus{
+		Name:        processName,
+		State:       mp.State,
+		Description: mp.getDescription(),
 	}
 }
