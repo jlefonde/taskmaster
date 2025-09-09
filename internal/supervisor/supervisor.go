@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -86,6 +87,25 @@ func (s *Supervisor) StartRequest(processName string, replyChan chan<- string) {
 	}
 
 	pm.StartProcess(processName, replyChan)
+}
+
+func (s *Supervisor) StartAllRequest(replyChan chan<- string) {
+	programReplyChan := make(chan string, len(s.programManagers))
+
+	for _, pm := range s.programManagers {
+		pm.StartAllProcesses(programReplyChan)
+	}
+
+	var replies []string
+	for i := 0; i < len(s.programManagers); i++ {
+		reply := <-programReplyChan
+		replies = append(replies, reply)
+	}
+
+	sort.Strings(replies)
+
+	replyMsg := strings.Join(replies, "\n")
+	replyChan <- replyMsg
 }
 
 func (s *Supervisor) Run() {

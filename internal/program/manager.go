@@ -2,6 +2,7 @@ package program
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -290,15 +291,8 @@ func (pm *ProgramManager) StartProcess(processName string, replyChan chan<- stri
 func (pm *ProgramManager) StartAllProcesses(replyChan chan<- string) {
 	processReplyChan := make(chan string, pm.Config.NumProcs)
 
-	for processName, mp := range pm.Processes {
-		switch mp.State {
-		case RUNNING, STARTING:
-			pm.Log.Infof("%s already %s", processName, mp.State)
-			processReplyChan <- fmt.Sprintf("%s: ERROR (already %s)", processName, strings.ToLower(string(mp.State)))
-		default:
-			pm.Requests[processName] = processReplyChan
-			pm.sendEvent(START, mp)
-		}
+	for processName := range pm.Processes {
+		pm.StartProcess(processName, processReplyChan)
 	}
 
 	var replies []string
@@ -306,6 +300,8 @@ func (pm *ProgramManager) StartAllProcesses(replyChan chan<- string) {
 		reply := <-processReplyChan
 		replies = append(replies, reply)
 	}
+
+	sort.Strings(replies)
 
 	replyMsg := strings.Join(replies, "\n")
 	replyChan <- replyMsg

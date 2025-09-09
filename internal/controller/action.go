@@ -69,14 +69,20 @@ func getActionNames(actions map[Action]*actionMetadata) func(string) []string {
 }
 
 func startAction(ctl *Controller, lineFields []string) {
-	// TODO: handle only "start" to start all processes
-
-	for _, processName := range lineFields {
+	if len(lineFields) == 0 {
 		replyChan := make(chan string, 1)
-		ctl.supervisor.StartRequest(processName, replyChan)
+		ctl.supervisor.StartAllRequest(replyChan)
 
 		reply := <-replyChan
 		fmt.Println(reply)
+	} else {
+		for _, processName := range lineFields {
+			replyChan := make(chan string, 1)
+			ctl.supervisor.StartRequest(processName, replyChan)
+
+			reply := <-replyChan
+			fmt.Println(reply)
+		}
 	}
 }
 
