@@ -87,7 +87,21 @@ func startAction(ctl *Controller, lineFields []string) {
 }
 
 func stopAction(ctl *Controller, lineFields []string) {
+	if len(lineFields) == 0 {
+		replyChan := make(chan string, 1)
+		ctl.supervisor.StopAllRequest(replyChan)
 
+		reply := <-replyChan
+		fmt.Println(reply)
+	} else {
+		for _, processName := range lineFields {
+			replyChan := make(chan string, 1)
+			ctl.supervisor.StopRequest(processName, replyChan)
+
+			reply := <-replyChan
+			fmt.Println(reply)
+		}
+	}
 }
 
 func restartAction(ctl *Controller, lineFields []string) {

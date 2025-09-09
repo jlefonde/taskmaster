@@ -108,6 +108,41 @@ func (s *Supervisor) StartAllRequest(replyChan chan<- string) {
 	replyChan <- replyMsg
 }
 
+func (s *Supervisor) StopRequest(processName string, replyChan chan<- string) {
+	programName, processNameCut, sepFound := strings.Cut(processName, ":")
+	pm, ok := s.programManagers[programName]
+	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
+		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
+		return
+	}
+
+	if (processNameCut == "" || processNameCut == "*") && pm.Config.NumProcs > 1 {
+		pm.StopAllProcesses(replyChan)
+		return
+	}
+
+	pm.StopProcess(processName, replyChan)
+}
+
+func (s *Supervisor) StopAllRequest(replyChan chan<- string) {
+	programReplyChan := make(chan string, len(s.programManagers))
+
+	for _, pm := range s.programManagers {
+		pm.StopAllProcesses(programReplyChan)
+	}
+
+	var replies []string
+	for i := 0; i < len(s.programManagers); i++ {
+		reply := <-programReplyChan
+		replies = append(replies, reply)
+	}
+
+	sort.Strings(replies)
+
+	replyMsg := strings.Join(replies, "\n")
+	replyChan <- replyMsg
+}
+
 func (s *Supervisor) Run() {
 	if !s.config.Taskmasterd.NoCleanup {
 		if err := cleanupLogFiles(s.log, s.config.Taskmasterd.ChildLogDir); err != nil {

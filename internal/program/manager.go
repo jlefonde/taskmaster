@@ -220,17 +220,17 @@ func (pm *ProgramManager) restartProcess(mp *ManagedProcess) Event {
 }
 
 func (pm *ProgramManager) stopProcess(mp *ManagedProcess) Event {
-	if mp.Cmd == nil || mp.Cmd.Process == nil {
-		return PROCESS_STOPPED
-	}
-
 	pgid := mp.Cmd.Process.Pid
 	if err := syscall.Kill(-pgid, pm.Config.StopSignal); err != nil {
 		pm.Log.Warningf("failed to send stop signal to process %d: %v", mp.Cmd.Process.Pid, err)
+		mp.StopTime = time.Now()
+		pm.replyToRequest(mp, "failed to stop")
 		return PROCESS_STOPPED
 	}
 
 	mp.StopTime = time.Now()
+	pm.replyToRequest(mp, "stopped")
+
 	return ""
 }
 
@@ -293,6 +293,42 @@ func (pm *ProgramManager) StartAllProcesses(replyChan chan<- string) {
 
 	for processName := range pm.Processes {
 		pm.StartProcess(processName, processReplyChan)
+	}
+
+	var replies []string
+	for i := 0; i < pm.Config.NumProcs; i++ {
+		reply := <-processReplyChan
+		replies = append(replies, reply)
+	}
+
+	sort.Strings(replies)
+
+	replyMsg := strings.Join(replies, "\n")
+	replyChan <- replyMsg
+}
+
+func (pm *ProgramManager) StopProcess(processName string, replyChan chan<- string) {
+	mp, ok := pm.Processes[processName]
+	if !ok {
+		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
+		return
+	}
+
+	switch mp.State {
+	case STOPPED, EXITED, FATAL, BACKOFF:
+		pm.Log.Infof("%s already %s", processName, mp.State)
+		replyChan <- fmt.Sprintf("%s: ERROR (already %s)", processName, strings.ToLower(string(mp.State)))
+	default:
+		pm.Requests[processName] = replyChan
+		pm.sendEvent(STOP, mp)
+	}
+}
+
+func (pm *ProgramManager) StopAllProcesses(replyChan chan<- string) {
+	processReplyChan := make(chan string, pm.Config.NumProcs)
+
+	for processName := range pm.Processes {
+		pm.StopProcess(processName, processReplyChan)
 	}
 
 	var replies []string

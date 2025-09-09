@@ -19,7 +19,8 @@ type SupervisorInterface interface {
 	GetProcessNames() func(string) []string
 	StartRequest(processName string, replyChan chan<- string)
 	StartAllRequest(replyChan chan<- string)
-	// StopProgram(name string) error
+	StopRequest(processName string, replyChan chan<- string)
+	StopAllRequest(replyChan chan<- string)
 	// RestartProgram(name string) error
 	// GetStatus(name string) (string, error)
 }
