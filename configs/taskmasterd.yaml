@@ -27,3 +27,7 @@ programs:
         exitcodes: 1
         startsecs: 1
         autorestart: never
+    test:
+        cmd: /home/jlefonde/Documents/taskmaster/test
+        env:
+            TEST: "123"

@@ -278,7 +278,7 @@ func (pm *ProgramManager) StartProcess(processName string, replyChan chan<- Requ
 	if !ok {
 		replyChan <- RequestReply{
 			ProcessName: processName,
-			Err:         fmt.Errorf("no such processs"),
+			Err:         fmt.Errorf("no such process"),
 		}
 		return
 	}
@@ -296,16 +296,12 @@ func (pm *ProgramManager) StartProcess(processName string, replyChan chan<- Requ
 }
 
 func (pm *ProgramManager) StartAllProcesses(replyChan chan<- []RequestReply) {
-	processReplyChan := make(chan RequestReply, pm.Config.NumProcs)
+	var replies []RequestReply
 
 	for processName := range pm.Processes {
+		processReplyChan := make(chan RequestReply, 1)
 		pm.StartProcess(processName, processReplyChan)
-	}
-
-	var replies []RequestReply
-	for i := 0; i < pm.Config.NumProcs; i++ {
-		reply := <-processReplyChan
-		replies = append(replies, reply)
+		replies = append(replies, <-processReplyChan)
 	}
 
 	replyChan <- replies
@@ -316,7 +312,7 @@ func (pm *ProgramManager) StopProcess(processName string, replyChan chan<- Reque
 	if !ok {
 		replyChan <- RequestReply{
 			ProcessName: processName,
-			Err:         fmt.Errorf("no such processs"),
+			Err:         fmt.Errorf("no such process"),
 		}
 		return
 	}
@@ -334,16 +330,12 @@ func (pm *ProgramManager) StopProcess(processName string, replyChan chan<- Reque
 }
 
 func (pm *ProgramManager) StopAllProcesses(replyChan chan<- []RequestReply) {
-	processReplyChan := make(chan RequestReply, pm.Config.NumProcs)
+	var replies []RequestReply
 
 	for processName := range pm.Processes {
+		processReplyChan := make(chan RequestReply, 1)
 		pm.StopProcess(processName, processReplyChan)
-	}
-
-	var replies []RequestReply
-	for i := 0; i < pm.Config.NumProcs; i++ {
-		reply := <-processReplyChan
-		replies = append(replies, reply)
+		replies = append(replies, <-processReplyChan)
 	}
 
 	replyChan <- replies

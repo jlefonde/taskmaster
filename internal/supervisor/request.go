@@ -8,15 +8,12 @@ import (
 )
 
 func (s *Supervisor) startAllPrograms(replyChan chan<- []program.RequestReply) {
-	programReplyChan := make(chan []program.RequestReply, len(s.programManagers))
+	var replies []program.RequestReply
 
 	for _, pm := range s.programManagers {
-		pm.StartAllProcesses(programReplyChan)
-	}
-
-	var replies []program.RequestReply
-	for range len(s.programManagers) {
-		replies = append(replies, <-programReplyChan...)
+		programReplies := make(chan []program.RequestReply, 1)
+		pm.StartAllProcesses(programReplies)
+		replies = append(replies, <-programReplies...)
 	}
 
 	replyChan <- replies
@@ -34,7 +31,7 @@ func (s *Supervisor) StartRequest(processName string, replyChan chan<- []program
 		replyChan <- []program.RequestReply{
 			{
 				ProcessName: processName,
-				Err:         fmt.Errorf("no such processs"),
+				Err:         fmt.Errorf("no such process"),
 			},
 		}
 		return
@@ -51,15 +48,12 @@ func (s *Supervisor) StartRequest(processName string, replyChan chan<- []program
 }
 
 func (s *Supervisor) stopAllPrograms(replyChan chan<- []program.RequestReply) {
-	programReplyChan := make(chan []program.RequestReply, len(s.programManagers))
+	var replies []program.RequestReply
 
 	for _, pm := range s.programManagers {
-		pm.StopAllProcesses(programReplyChan)
-	}
-
-	var replies []program.RequestReply
-	for range len(s.programManagers) {
-		replies = append(replies, <-programReplyChan...)
+		programReplies := make(chan []program.RequestReply, 1)
+		pm.StopAllProcesses(programReplies)
+		replies = append(replies, <-programReplies...)
 	}
 
 	replyChan <- replies
@@ -77,7 +71,7 @@ func (s *Supervisor) StopRequest(processName string, replyChan chan<- []program.
 		replyChan <- []program.RequestReply{
 			{
 				ProcessName: processName,
-				Err:         fmt.Errorf("no such processs"),
+				Err:         fmt.Errorf("no such process"),
 			},
 		}
 		return
