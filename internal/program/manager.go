@@ -2,7 +2,6 @@ package program
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -43,7 +42,7 @@ type ProgramManager struct {
 	ChildLogDir string
 	Log         *logger.Logger
 	Processes   map[string]*ManagedProcess
-	Requests    map[string]chan<- string
+	Requests    map[string]chan<- RequestReply
 	Transitions *map[State]map[Event]Transition
 	StopChan    chan struct{}
 	ExitChan    chan ProcessExitInfo
@@ -57,7 +56,7 @@ func NewProgramManager(programName string, programConfig *config.Program, childL
 		ChildLogDir: childLogDir,
 		Log:         log,
 		Processes:   make(map[string]*ManagedProcess),
-		Requests:    make(map[string]chan<- string),
+		Requests:    make(map[string]chan<- RequestReply),
 		Transitions: newTransitions(),
 		StopChan:    make(chan struct{}),
 		ExitChan:    make(chan ProcessExitInfo),
@@ -162,7 +161,10 @@ func (pm *ProgramManager) replyToRequest(mp *ManagedProcess, replyMsg string) {
 	processName := pm.getProcessName(mp.Num)
 	replyChan, ok := pm.Requests[processName]
 	if ok {
-		replyChan <- fmt.Sprintf("%s: %s", processName, replyMsg)
+		replyChan <- RequestReply{
+			ProcessName: processName,
+			Message:     replyMsg,
+		}
 		delete(pm.Requests, processName)
 	}
 }
@@ -271,87 +273,90 @@ func (pm *ProgramManager) allProcessesTerminated() bool {
 	return true
 }
 
-func (pm *ProgramManager) StartProcess(processName string, replyChan chan<- string) {
+func (pm *ProgramManager) StartProcess(processName string, replyChan chan<- RequestReply) {
 	mp, ok := pm.Processes[processName]
 	if !ok {
-		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
+		replyChan <- RequestReply{
+			ProcessName: processName,
+			Err:         fmt.Errorf("no such processs"),
+		}
 		return
 	}
 
 	switch mp.State {
 	case RUNNING, STARTING:
 		pm.Log.Infof("%s already %s", processName, mp.State)
-		replyChan <- fmt.Sprintf("%s: ERROR (already %s)", processName, strings.ToLower(string(mp.State)))
+		replyChan <- RequestReply{
+			ProcessName: processName,
+			Err:         fmt.Errorf("already %s", strings.ToLower(string(mp.State))),
+		}
 	default:
 		pm.Requests[processName] = replyChan
 		pm.sendEvent(START, mp)
 	}
 }
 
-func (pm *ProgramManager) StartAllProcesses(replyChan chan<- string) {
-	processReplyChan := make(chan string, pm.Config.NumProcs)
+func (pm *ProgramManager) StartAllProcesses(replyChan chan<- []RequestReply) {
+	processReplyChan := make(chan RequestReply, pm.Config.NumProcs)
 
 	for processName := range pm.Processes {
 		pm.StartProcess(processName, processReplyChan)
 	}
 
-	var replies []string
+	var replies []RequestReply
 	for i := 0; i < pm.Config.NumProcs; i++ {
 		reply := <-processReplyChan
 		replies = append(replies, reply)
 	}
 
-	sort.Strings(replies)
-
-	replyMsg := strings.Join(replies, "\n")
-	replyChan <- replyMsg
+	replyChan <- replies
 }
 
-func (pm *ProgramManager) StopProcess(processName string, replyChan chan<- string) {
-	mp, ok := pm.Processes[processName]
-	if !ok {
-		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
-		return
-	}
+// func (pm *ProgramManager) StopProcess(processName string, replyChan chan<- string) {
+// 	mp, ok := pm.Processes[processName]
+// 	if !ok {
+// 		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
+// 		return
+// 	}
 
-	switch mp.State {
-	case STOPPED, EXITED, FATAL, BACKOFF:
-		pm.Log.Infof("%s already %s", processName, mp.State)
-		replyChan <- fmt.Sprintf("%s: ERROR (already %s)", processName, strings.ToLower(string(mp.State)))
-	default:
-		pm.Requests[processName] = replyChan
-		pm.sendEvent(STOP, mp)
-	}
-}
+// 	switch mp.State {
+// 	case STOPPED, EXITED, FATAL, BACKOFF:
+// 		pm.Log.Infof("%s already %s", processName, mp.State)
+// 		replyChan <- fmt.Sprintf("%s: ERROR (already %s)", processName, strings.ToLower(string(mp.State)))
+// 	default:
+// 		pm.Requests[processName] = replyChan
+// 		pm.sendEvent(STOP, mp)
+// 	}
+// }
 
-func (pm *ProgramManager) StopAllProcesses(replyChan chan<- string) {
-	processReplyChan := make(chan string, pm.Config.NumProcs)
+// func (pm *ProgramManager) StopAllProcesses(replyChan chan<- string) {
+// 	processReplyChan := make(chan string, pm.Config.NumProcs)
 
-	for processName := range pm.Processes {
-		pm.StopProcess(processName, processReplyChan)
-	}
+// 	for processName := range pm.Processes {
+// 		pm.StopProcess(processName, processReplyChan)
+// 	}
 
-	var replies []string
-	for i := 0; i < pm.Config.NumProcs; i++ {
-		reply := <-processReplyChan
-		replies = append(replies, reply)
-	}
+// 	var replies []string
+// 	for i := 0; i < pm.Config.NumProcs; i++ {
+// 		reply := <-processReplyChan
+// 		replies = append(replies, reply)
+// 	}
 
-	sort.Strings(replies)
+// 	sort.Strings(replies)
 
-	replyMsg := strings.Join(replies, "\n")
-	replyChan <- replyMsg
-}
+// 	replyMsg := strings.Join(replies, "\n")
+// 	replyChan <- replyMsg
+// }
 
-func (pm *ProgramManager) GetProcessStatus(processName string, replyChan chan<- string) *ProcessStatus {
-	mp, ok := pm.Processes[processName]
-	if !ok {
-		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
-		return nil
-	}
+// func (pm *ProgramManager) GetProcessStatus(processName string, replyChan chan<- string) *ProcessStatus {
+// 	mp, ok := pm.Processes[processName]
+// 	if !ok {
+// 		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
+// 		return nil
+// 	}
 
-	return mp.getStatus(processName)
-}
+// 	return mp.getStatus(processName)
+// }
 
 func (pm *ProgramManager) checkProcessState(mp *ManagedProcess) {
 	if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {

@@ -21,10 +21,17 @@ type ProcessExitInfo struct {
 	Err      error
 }
 
+type RequestReply struct {
+	ProcessName string
+	Message     string
+	Err         error
+}
+
 type ProcessStatus struct {
 	Name        string
 	State       State
 	Description string
+	Err         error
 }
 
 type ManagedProcess struct {

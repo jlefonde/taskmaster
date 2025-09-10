@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"taskmaster/internal/program"
 
 	"github.com/chzyer/readline"
 )
@@ -18,9 +19,9 @@ type Controller struct {
 
 type SupervisorInterface interface {
 	GetProcessNames() func(string) []string
-	StartRequest(processName string, replyChan chan<- string)
-	StopRequest(processName string, replyChan chan<- string)
-	StatusRequest(processName string, replyChan chan<- string)
+	StartRequest(processName string, replyChan chan<- []program.RequestReply)
+	// StopRequest(processName string, replyChan chan<- string)
+	// StatusRequest(processName string, replyChan chan<- string)
 	// RestartProgram(name string) error
 }
 

@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"os"
+	"taskmaster/internal/program"
 
 	"github.com/chzyer/readline"
 )
@@ -76,28 +77,33 @@ func startAction(ctl *Controller, lineFields []string) {
 	}
 
 	for _, processName := range lineFields {
-		replyChan := make(chan string, 1)
+		replyChan := make(chan []program.RequestReply, 1)
 		ctl.supervisor.StartRequest(processName, replyChan)
 
-		reply := <-replyChan
-		fmt.Println(reply)
+		for _, reply := range <-replyChan {
+			if reply.Err != nil {
+				fmt.Fprintf(os.Stderr, "%s: ERROR (%v)\n", reply.ProcessName, reply.Err)
+			} else {
+				fmt.Printf("%s: %s\n", reply.ProcessName, reply.Message)
+			}
+		}
 	}
 }
 
 func stopAction(ctl *Controller, lineFields []string) {
-	if len(lineFields) == 0 {
-		fmt.Fprintln(os.Stderr, "*** invalid stop syntax")
-		stopHelper()
-		return
-	}
+	// if len(lineFields) == 0 {
+	// 	fmt.Fprintln(os.Stderr, "*** invalid stop syntax")
+	// 	stopHelper()
+	// 	return
+	// }
 
-	for _, processName := range lineFields {
-		replyChan := make(chan string, 1)
-		ctl.supervisor.StopRequest(processName, replyChan)
+	// for _, processName := range lineFields {
+	// 	replyChan := make(chan string, 1)
+	// 	ctl.supervisor.StopRequest(processName, replyChan)
 
-		reply := <-replyChan
-		fmt.Println(reply)
-	}
+	// 	reply := <-replyChan
+	// 	fmt.Println(reply)
+	// }
 }
 
 func restartAction(ctl *Controller, lineFields []string) {
@@ -105,19 +111,19 @@ func restartAction(ctl *Controller, lineFields []string) {
 }
 
 func statusAction(ctl *Controller, lineFields []string) {
-	if len(lineFields) == 0 {
-		fmt.Fprintln(os.Stderr, "*** invalid status syntax")
-		statusHelper()
-		return
-	}
+	// if len(lineFields) == 0 {
+	// 	fmt.Fprintln(os.Stderr, "*** invalid status syntax")
+	// 	statusHelper()
+	// 	return
+	// }
 
-	for _, processName := range lineFields {
-		replyChan := make(chan string, 1)
-		ctl.supervisor.StatusRequest(processName, replyChan)
+	// for _, processName := range lineFields {
+	// 	replyChan := make(chan string, 1)
+	// 	ctl.supervisor.StatusRequest(processName, replyChan)
 
-		reply := <-replyChan
-		fmt.Println(reply)
-	}
+	// 	reply := <-replyChan
+	// 	fmt.Println(reply)
+	// }
 }
 
 func updateAction(ctl *Controller, lineFields []string) {

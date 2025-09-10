@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -73,54 +72,56 @@ func (s *Supervisor) GetProcessNames() func(string) []string {
 	}
 }
 
-func (s *Supervisor) startAllPrograms(replyChan chan<- string) {
-	programReplyChan := make(chan string, len(s.programManagers))
+func (s *Supervisor) startAllPrograms(replyChan chan<- []program.RequestReply) {
+	// programReplyChan := make(chan []program.RequestReply, len(s.programManagers))
 
-	for _, pm := range s.programManagers {
-		pm.StartAllProcesses(programReplyChan)
-	}
+	// for _, pm := range s.programManagers {
+	// 	pm.StartAllProcesses(programReplyChan)
+	// }
 
-	var replies []string
-	for i := 0; i < len(s.programManagers); i++ {
-		reply := <-programReplyChan
-		replies = append(replies, reply)
-	}
+	// var replies [][]program.RequestReply
+	// for i := 0; i < len(s.programManagers); i++ {
+	// 	reply := <-programReplyChan
+	// 	replies = append(replies, reply)
+	// }
 
-	sort.Strings(replies)
-
-	replyMsg := strings.Join(replies, "\n")
-	replyChan <- replyMsg
+	// replyChan <- replies
 }
 
-func (s *Supervisor) stopAllPrograms(replyChan chan<- string) {
-	programReplyChan := make(chan string, len(s.programManagers))
+// func (s *Supervisor) stopAllPrograms(replyChan chan<- string) {
+// 	programReplyChan := make(chan string, len(s.programManagers))
 
-	for _, pm := range s.programManagers {
-		pm.StopAllProcesses(programReplyChan)
-	}
+// 	for _, pm := range s.programManagers {
+// 		pm.StopAllProcesses(programReplyChan)
+// 	}
 
-	var replies []string
-	for i := 0; i < len(s.programManagers); i++ {
-		reply := <-programReplyChan
-		replies = append(replies, reply)
-	}
+// 	var replies []string
+// 	for i := 0; i < len(s.programManagers); i++ {
+// 		reply := <-programReplyChan
+// 		replies = append(replies, reply)
+// 	}
 
-	sort.Strings(replies)
+// 	sort.Strings(replies)
 
-	replyMsg := strings.Join(replies, "\n")
-	replyChan <- replyMsg
-}
+// 	replyMsg := strings.Join(replies, "\n")
+// 	replyChan <- replyMsg
+// }
 
-func (s *Supervisor) StartRequest(processName string, replyChan chan<- string) {
+func (s *Supervisor) StartRequest(processName string, replyChan chan<- []program.RequestReply) {
 	if processName == "all" {
-		s.startAllPrograms(replyChan)
+		// s.startAllPrograms(replyChan)
 		return
 	}
 
 	programName, processNameCut, sepFound := strings.Cut(processName, ":")
 	pm, ok := s.programManagers[programName]
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
-		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
+		replyChan <- []program.RequestReply{
+			{
+				ProcessName: processName,
+				Err:         fmt.Errorf("no such processs"),
+			},
+		}
 		return
 	}
 
@@ -129,51 +130,53 @@ func (s *Supervisor) StartRequest(processName string, replyChan chan<- string) {
 		return
 	}
 
-	pm.StartProcess(processName, replyChan)
+	reply := make(chan program.RequestReply, 1)
+	pm.StartProcess(processName, reply)
+	replyChan <- []program.RequestReply{<-reply}
 }
 
-func (s *Supervisor) StopRequest(processName string, replyChan chan<- string) {
-	if processName == "all" {
-		s.stopAllPrograms(replyChan)
-		return
-	}
+// func (s *Supervisor) StopRequest(processName string, replyChan chan<- string) {
+// 	if processName == "all" {
+// 		s.stopAllPrograms(replyChan)
+// 		return
+// 	}
 
-	programName, processNameCut, sepFound := strings.Cut(processName, ":")
-	pm, ok := s.programManagers[programName]
-	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
-		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
-		return
-	}
+// 	programName, processNameCut, sepFound := strings.Cut(processName, ":")
+// 	pm, ok := s.programManagers[programName]
+// 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
+// 		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
+// 		return
+// 	}
 
-	if (processNameCut == "" || processNameCut == "*") && pm.Config.NumProcs > 1 {
-		pm.StopAllProcesses(replyChan)
-		return
-	}
+// 	if (processNameCut == "" || processNameCut == "*") && pm.Config.NumProcs > 1 {
+// 		pm.StopAllProcesses(replyChan)
+// 		return
+// 	}
 
-	pm.StopProcess(processName, replyChan)
-}
+// 	pm.StopProcess(processName, replyChan)
+// }
 
-func (s *Supervisor) StatusRequest(processName string, replyChan chan<- string) {
-	if processName == "all" {
-		// TODO
-		return
-	}
+// func (s *Supervisor) StatusRequest(processName string, replyChan chan<- string) {
+// 	if processName == "all" {
+// 		// TODO
+// 		return
+// 	}
 
-	programName, processNameCut, sepFound := strings.Cut(processName, ":")
-	pm, ok := s.programManagers[programName]
-	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
-		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
-		return
-	}
+// 	programName, processNameCut, sepFound := strings.Cut(processName, ":")
+// 	pm, ok := s.programManagers[programName]
+// 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
+// 		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
+// 		return
+// 	}
 
-	if (processNameCut == "" || processNameCut == "*") && pm.Config.NumProcs > 1 {
-		// TODO
-		return
-	}
+// 	if (processNameCut == "" || processNameCut == "*") && pm.Config.NumProcs > 1 {
+// 		// TODO
+// 		return
+// 	}
 
-	status := pm.GetProcessStatus(processName, replyChan)
-	replyChan <- status.Description
-}
+// 	status := pm.GetProcessStatus(processName, replyChan)
+// 	replyChan <- status.Description
+// }
 
 func (s *Supervisor) Run() {
 	if !s.config.Taskmasterd.NoCleanup {
