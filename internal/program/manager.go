@@ -299,11 +299,17 @@ func (pm *ProgramManager) StartProcess(processName string, replyChan chan<- Requ
 }
 
 func (pm *ProgramManager) StartAllProcesses(replyChan chan<- []RequestReply) {
-	var replies []RequestReply
+	processCount := len(pm.Processes)
+	processReplyChan := make(chan RequestReply, processCount)
 
 	for processName := range pm.Processes {
-		processReplyChan := make(chan RequestReply, 1)
-		pm.StartProcess(processName, processReplyChan)
+		go func(processName string) {
+			pm.StartProcess(processName, processReplyChan)
+		}(processName)
+	}
+
+	var replies []RequestReply
+	for i := 0; i < processCount; i++ {
 		replies = append(replies, <-processReplyChan)
 	}
 
@@ -333,11 +339,17 @@ func (pm *ProgramManager) StopProcess(processName string, replyChan chan<- Reque
 }
 
 func (pm *ProgramManager) StopAllProcesses(replyChan chan<- []RequestReply) {
-	var replies []RequestReply
+	processCount := len(pm.Processes)
+	processReplyChan := make(chan RequestReply, processCount)
 
 	for processName := range pm.Processes {
-		processReplyChan := make(chan RequestReply, 1)
-		pm.StopProcess(processName, processReplyChan)
+		go func(processName string) {
+			pm.StopProcess(processName, processReplyChan)
+		}(processName)
+	}
+
+	var replies []RequestReply
+	for i := 0; i < processCount; i++ {
 		replies = append(replies, <-processReplyChan)
 	}
 
