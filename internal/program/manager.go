@@ -68,52 +68,54 @@ func newTransitions() *map[State]map[Event]Transition {
 	return &map[State]map[Event]Transition{
 		STOPPED: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, STOPPED, STARTING)
+				pm.logTransition(mp.Name, STOPPED, STARTING)
 				return pm.startProcess(mp)
 			}},
 		},
 		STARTING: {
 			PROCESS_STARTED: {To: RUNNING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, STARTING, RUNNING)
+				pm.logTransition(mp.Name, STARTING, RUNNING)
 				mp.RestartCount = 0
 				return ""
 			}},
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, STARTING, STOPPING)
+				pm.logTransition(mp.Name, STARTING, STOPPING)
 				return pm.stopProcess(mp)
 			}},
 			PROCESS_FAILED: {To: BACKOFF, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, STARTING, BACKOFF)
+				pm.logTransition(mp.Name, STARTING, BACKOFF)
+				pm.replyToRequest(mp, "spawn error", true)
 				return pm.restartProcess(mp)
 			}},
 			PROCESS_EXITED: {To: BACKOFF, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, STARTING, BACKOFF)
+				pm.logTransition(mp.Name, STARTING, BACKOFF)
+				pm.replyToRequest(mp, "spawn error", true)
 				return pm.restartProcess(mp)
 			}},
 		},
 		RUNNING: {
 			PROCESS_EXITED: {To: EXITED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, RUNNING, EXITED)
+				pm.logTransition(mp.Name, RUNNING, EXITED)
 				return ""
 			}},
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, RUNNING, STOPPING)
+				pm.logTransition(mp.Name, RUNNING, STOPPING)
 				return pm.stopProcess(mp)
 			}},
 		},
 		BACKOFF: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, BACKOFF, STARTING)
+				pm.logTransition(mp.Name, BACKOFF, STARTING)
 				return pm.startProcess(mp)
 			}},
 			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, BACKOFF, FATAL)
+				pm.logTransition(mp.Name, BACKOFF, FATAL)
 				return ""
 			}},
 		},
 		STOPPING: {
 			PROCESS_STOPPED: {To: STOPPED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, STOPPING, STOPPED)
+				pm.logTransition(mp.Name, STOPPING, STOPPED)
 				if mp.RestartRequested {
 					mp.RestartRequested = false
 					return START
@@ -123,13 +125,13 @@ func newTransitions() *map[State]map[Event]Transition {
 		},
 		EXITED: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, EXITED, STARTING)
+				pm.logTransition(mp.Name, EXITED, STARTING)
 				return pm.startProcess(mp)
 			}},
 		},
 		FATAL: {
 			START: {To: STARTING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
-				pm.logTransition(mp.Num, FATAL, STARTING)
+				pm.logTransition(mp.Name, FATAL, STARTING)
 				return pm.startProcess(mp)
 			}},
 		},
@@ -157,15 +159,22 @@ func (pm *ProgramManager) sendEvent(event Event, mp *ManagedProcess) {
 	}
 }
 
-func (pm *ProgramManager) replyToRequest(mp *ManagedProcess, replyMsg string) {
-	processName := pm.getProcessName(mp.Num)
-	replyChan, ok := pm.Requests[processName]
+func (pm *ProgramManager) replyToRequest(mp *ManagedProcess, msg string, isError bool) {
+	replyChan, ok := pm.Requests[mp.Name]
 	if ok {
-		replyChan <- RequestReply{
-			ProcessName: processName,
-			Message:     replyMsg,
+		if isError {
+			replyChan <- RequestReply{
+				ProcessName: mp.Name,
+				Err:         fmt.Errorf("%s", msg),
+			}
+		} else {
+			replyChan <- RequestReply{
+				ProcessName: mp.Name,
+				Message:     msg,
+			}
 		}
-		delete(pm.Requests, processName)
+
+		delete(pm.Requests, mp.Name)
 	}
 }
 
@@ -173,24 +182,19 @@ func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
 	mp.StartTime = time.Time{}
 
 	if err := mp.setProcessStdLogs(pm); err != nil {
-		pm.Log.Warningf("failed to set logs file for program '%s' (process %d): %v", pm.Name, mp.Num, err)
-		pm.replyToRequest(mp, "ERROR (failed to start)")
+		pm.Log.Warningf("failed to set logs file for %s: %v", mp.Name, err)
 		return PROCESS_FAILED
 	}
 
 	cmd, err := mp.newCmd(pm.Config)
 	if err != nil {
-		pm.Log.Warningf("prepare cmd failed for program '%s' (process %d): %v", pm.Name, mp.Num, err)
-		pm.replyToRequest(mp, "ERROR (failed to start)")
+		pm.Log.Warningf("failed to create command for %s: %v", mp.Name, err)
 		return PROCESS_FAILED
 	}
 
 	if err := cmd.Start(); err != nil {
-		pm.replyToRequest(mp, "ERROR (failed to start)")
 		return PROCESS_FAILED
 	}
-
-	pm.replyToRequest(mp, "started")
 
 	mp.StartTime = time.Now()
 	mp.Cmd = cmd
@@ -226,18 +230,17 @@ func (pm *ProgramManager) stopProcess(mp *ManagedProcess) Event {
 	if err := syscall.Kill(-pgid, pm.Config.StopSignal); err != nil {
 		pm.Log.Warningf("failed to send stop signal to process %d: %v", mp.Cmd.Process.Pid, err)
 		mp.StopTime = time.Now()
-		pm.replyToRequest(mp, "failed to stop")
+		pm.replyToRequest(mp, "failed to stop", true)
 		return PROCESS_STOPPED
 	}
 
 	mp.StopTime = time.Now()
-	pm.replyToRequest(mp, "stopped")
 
 	return ""
 }
 
-func (pm *ProgramManager) logTransition(processNum int, from State, to State) {
-	pm.Log.Infof("%s %s -> %s\n", pm.getProcessName(processNum), from, to)
+func (pm *ProgramManager) logTransition(processName string, from State, to State) {
+	pm.Log.Infof("%s %s -> %s\n", processName, from, to)
 }
 
 func (pm *ProgramManager) forceStop(mp *ManagedProcess) {
@@ -354,6 +357,7 @@ func (pm *ProgramManager) StopAllProcesses(replyChan chan<- []RequestReply) {
 func (pm *ProgramManager) checkProcessState(mp *ManagedProcess) {
 	if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
 		pm.sendEvent(PROCESS_STARTED, mp)
+		pm.replyToRequest(mp, "started", false)
 	} else if mp.State == STOPPING && mp.hasStopTimeoutExpired(pm.Config.StopSecs) {
 		pm.forceStop(mp)
 	} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) && !pm.Terminating {
@@ -368,7 +372,7 @@ func (pm *ProgramManager) Run() {
 
 	for processNum := range pm.Config.NumProcs {
 		processName := pm.getProcessName(processNum)
-		pm.Processes[processName] = newManagedProcess(processNum, pm.ExitChan)
+		pm.Processes[processName] = newManagedProcess(processNum, processName, pm.ExitChan)
 
 		if pm.Config.AutoStart {
 			pm.sendEvent(START, pm.Processes[processName])
@@ -393,8 +397,10 @@ func (pm *ProgramManager) Run() {
 
 			if mp.State == STOPPING {
 				pm.sendEvent(PROCESS_STOPPED, mp)
+				pm.replyToRequest(mp, "stopped", false)
 			} else {
 				pm.sendEvent(PROCESS_EXITED, mp)
+				pm.replyToRequest(mp, fmt.Sprintf("already %s", strings.ToLower(string(mp.State))), true)
 			}
 		case <-ticker.C:
 			for _, mp := range pm.Processes {

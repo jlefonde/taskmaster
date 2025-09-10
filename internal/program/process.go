@@ -35,6 +35,7 @@ type ProcessStatus struct {
 }
 
 type ManagedProcess struct {
+	Name             string
 	Num              int
 	Cmd              *exec.Cmd
 	State            State
@@ -51,8 +52,9 @@ type ManagedProcess struct {
 	StderrLogFile    string
 }
 
-func newManagedProcess(processNum int, exitChan chan ProcessExitInfo) *ManagedProcess {
+func newManagedProcess(processNum int, processName string, exitChan chan ProcessExitInfo) *ManagedProcess {
 	return &ManagedProcess{
+		Name:     processName,
 		Num:      processNum,
 		State:    STOPPED,
 		ExitChan: exitChan,
