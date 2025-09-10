@@ -3,6 +3,9 @@ package controller
 import (
 	"fmt"
 	"os"
+	"slices"
+	"strings"
+
 	"taskmaster/internal/program"
 
 	"github.com/chzyer/readline"
@@ -69,6 +72,20 @@ func getActionNames(actions map[Action]*actionMetadata) func(string) []string {
 	}
 }
 
+func isAllFound(lineFields []string) bool {
+	for _, processName := range lineFields {
+		if processName == "all" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func sortReplies(a, b program.RequestReply) int {
+	return strings.Compare(strings.ToLower(a.ProcessName), strings.ToLower(b.ProcessName))
+}
+
 func startAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) == 0 {
 		fmt.Fprintln(os.Stderr, "*** invalid start syntax")
@@ -76,11 +93,20 @@ func startAction(ctl *Controller, lineFields []string) {
 		return
 	}
 
+	allFound := isAllFound(lineFields)
+
 	for _, processName := range lineFields {
+		if allFound && processName != "all" {
+			continue
+		}
+
 		replyChan := make(chan []program.RequestReply, 1)
 		ctl.supervisor.StartRequest(processName, replyChan)
 
-		for _, reply := range <-replyChan {
+		replies := <-replyChan
+		slices.SortFunc(replies, sortReplies)
+
+		for _, reply := range replies {
 			if reply.Err != nil {
 				fmt.Fprintf(os.Stderr, "%s: ERROR (%v)\n", reply.ProcessName, reply.Err)
 			} else {
@@ -91,19 +117,33 @@ func startAction(ctl *Controller, lineFields []string) {
 }
 
 func stopAction(ctl *Controller, lineFields []string) {
-	// if len(lineFields) == 0 {
-	// 	fmt.Fprintln(os.Stderr, "*** invalid stop syntax")
-	// 	stopHelper()
-	// 	return
-	// }
+	if len(lineFields) == 0 {
+		fmt.Fprintln(os.Stderr, "*** invalid stop syntax")
+		stopHelper()
+		return
+	}
 
-	// for _, processName := range lineFields {
-	// 	replyChan := make(chan string, 1)
-	// 	ctl.supervisor.StopRequest(processName, replyChan)
+	allFound := isAllFound(lineFields)
 
-	// 	reply := <-replyChan
-	// 	fmt.Println(reply)
-	// }
+	for _, processName := range lineFields {
+		if allFound && processName != "all" {
+			continue
+		}
+
+		replyChan := make(chan []program.RequestReply, 1)
+		ctl.supervisor.StopRequest(processName, replyChan)
+
+		replies := <-replyChan
+		slices.SortFunc(replies, sortReplies)
+
+		for _, reply := range replies {
+			if reply.Err != nil {
+				fmt.Fprintf(os.Stderr, "%s: ERROR (%v)\n", reply.ProcessName, reply.Err)
+			} else {
+				fmt.Printf("%s: %s\n", reply.ProcessName, reply.Message)
+			}
+		}
+	}
 }
 
 func restartAction(ctl *Controller, lineFields []string) {

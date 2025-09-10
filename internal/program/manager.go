@@ -285,7 +285,6 @@ func (pm *ProgramManager) StartProcess(processName string, replyChan chan<- Requ
 
 	switch mp.State {
 	case RUNNING, STARTING:
-		pm.Log.Infof("%s already %s", processName, mp.State)
 		replyChan <- RequestReply{
 			ProcessName: processName,
 			Err:         fmt.Errorf("already %s", strings.ToLower(string(mp.State))),
@@ -312,41 +311,43 @@ func (pm *ProgramManager) StartAllProcesses(replyChan chan<- []RequestReply) {
 	replyChan <- replies
 }
 
-// func (pm *ProgramManager) StopProcess(processName string, replyChan chan<- string) {
-// 	mp, ok := pm.Processes[processName]
-// 	if !ok {
-// 		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
-// 		return
-// 	}
+func (pm *ProgramManager) StopProcess(processName string, replyChan chan<- RequestReply) {
+	mp, ok := pm.Processes[processName]
+	if !ok {
+		replyChan <- RequestReply{
+			ProcessName: processName,
+			Err:         fmt.Errorf("no such processs"),
+		}
+		return
+	}
 
-// 	switch mp.State {
-// 	case STOPPED, EXITED, FATAL, BACKOFF:
-// 		pm.Log.Infof("%s already %s", processName, mp.State)
-// 		replyChan <- fmt.Sprintf("%s: ERROR (already %s)", processName, strings.ToLower(string(mp.State)))
-// 	default:
-// 		pm.Requests[processName] = replyChan
-// 		pm.sendEvent(STOP, mp)
-// 	}
-// }
+	switch mp.State {
+	case STOPPED, EXITED, FATAL, BACKOFF:
+		replyChan <- RequestReply{
+			ProcessName: processName,
+			Err:         fmt.Errorf("already %s", strings.ToLower(string(mp.State))),
+		}
+	default:
+		pm.Requests[processName] = replyChan
+		pm.sendEvent(STOP, mp)
+	}
+}
 
-// func (pm *ProgramManager) StopAllProcesses(replyChan chan<- string) {
-// 	processReplyChan := make(chan string, pm.Config.NumProcs)
+func (pm *ProgramManager) StopAllProcesses(replyChan chan<- []RequestReply) {
+	processReplyChan := make(chan RequestReply, pm.Config.NumProcs)
 
-// 	for processName := range pm.Processes {
-// 		pm.StopProcess(processName, processReplyChan)
-// 	}
+	for processName := range pm.Processes {
+		pm.StopProcess(processName, processReplyChan)
+	}
 
-// 	var replies []string
-// 	for i := 0; i < pm.Config.NumProcs; i++ {
-// 		reply := <-processReplyChan
-// 		replies = append(replies, reply)
-// 	}
+	var replies []RequestReply
+	for i := 0; i < pm.Config.NumProcs; i++ {
+		reply := <-processReplyChan
+		replies = append(replies, reply)
+	}
 
-// 	sort.Strings(replies)
-
-// 	replyMsg := strings.Join(replies, "\n")
-// 	replyChan <- replyMsg
-// }
+	replyChan <- replies
+}
 
 // func (pm *ProgramManager) GetProcessStatus(processName string, replyChan chan<- string) *ProcessStatus {
 // 	mp, ok := pm.Processes[processName]

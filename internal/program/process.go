@@ -8,7 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
-	s "strings"
+	"strings"
 	"syscall"
 	"time"
 
@@ -79,8 +79,8 @@ func (mp *ManagedProcess) getDefaultLogFile(pm *ProgramManager, outFile string) 
 }
 
 func (mp *ManagedProcess) newLogFile(pm *ProgramManager, path string, outFile string) (*os.File, string, error) {
-	if s.ToUpper(path) != "NONE" {
-		if path == "" || s.ToUpper(path) == "AUTO" {
+	if strings.ToUpper(path) != "NONE" {
+		if path == "" || strings.ToUpper(path) == "AUTO" {
 			path = mp.getDefaultLogFile(pm, outFile)
 		}
 
