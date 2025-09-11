@@ -22,6 +22,8 @@ const (
 	UPDATE  Action = "update"
 	QUIT    Action = "quit"
 	EXIT    Action = "exit"
+
+	MIN_PROCESS_NAME_WIDTH int = 29
 )
 
 type actionHandler func(ctl *Controller, lineFields []string)
@@ -72,7 +74,7 @@ func getActionNames(actions map[Action]*actionMetadata) func(string) []string {
 	}
 }
 
-func isAllFound(lineFields []string) bool {
+func containsAll(lineFields []string) bool {
 	for _, processName := range lineFields {
 		if processName == "all" {
 			return true
@@ -86,6 +88,24 @@ func sortReplies(a, b program.RequestReply) int {
 	return strings.Compare(strings.ToLower(a.ProcessName), strings.ToLower(b.ProcessName))
 }
 
+func sortStatuses(a, b program.ProcessStatus) int {
+	return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+}
+
+func getMaxProcessNameWidth(statuses []program.ProcessStatus) int {
+	maxProcessNameWidth := MIN_PROCESS_NAME_WIDTH
+	for _, status := range statuses {
+		if status.Err == nil {
+			processNameLen := len(status.Name)
+			if processNameLen > maxProcessNameWidth {
+				maxProcessNameWidth = processNameLen
+			}
+		}
+	}
+
+	return maxProcessNameWidth
+}
+
 func startAction(ctl *Controller, lineFields []string) {
 	if len(lineFields) == 0 {
 		fmt.Fprintln(os.Stderr, "*** invalid start syntax")
@@ -93,7 +113,7 @@ func startAction(ctl *Controller, lineFields []string) {
 		return
 	}
 
-	allFound := isAllFound(lineFields)
+	allFound := containsAll(lineFields)
 
 	for _, processName := range lineFields {
 		if allFound && processName != "all" {
@@ -123,7 +143,7 @@ func stopAction(ctl *Controller, lineFields []string) {
 		return
 	}
 
-	allFound := isAllFound(lineFields)
+	allFound := containsAll(lineFields)
 
 	for _, processName := range lineFields {
 		if allFound && processName != "all" {
@@ -151,19 +171,43 @@ func restartAction(ctl *Controller, lineFields []string) {
 }
 
 func statusAction(ctl *Controller, lineFields []string) {
-	// if len(lineFields) == 0 {
-	// 	fmt.Fprintln(os.Stderr, "*** invalid status syntax")
-	// 	statusHelper()
-	// 	return
-	// }
+	if len(lineFields) == 0 {
+		fmt.Fprintln(os.Stderr, "*** invalid status syntax")
+		statusHelper()
+		return
+	}
 
-	// for _, processName := range lineFields {
-	// 	replyChan := make(chan string, 1)
-	// 	ctl.supervisor.StatusRequest(processName, replyChan)
+	allFound := containsAll(lineFields)
+	statuses := make([]program.ProcessStatus, 0)
 
-	// 	reply := <-replyChan
-	// 	fmt.Println(reply)
-	// }
+	if allFound {
+		replyChan := make(chan []program.ProcessStatus, 1)
+		ctl.supervisor.StatusRequest("all", replyChan)
+		replies := <-replyChan
+		statuses = append(statuses, replies...)
+	} else {
+		for _, processName := range lineFields {
+			replyChan := make(chan []program.ProcessStatus, 1)
+			ctl.supervisor.StatusRequest(processName, replyChan)
+			replies := <-replyChan
+			statuses = append(statuses, replies...)
+		}
+	}
+
+	for _, status := range statuses {
+		if status.Err != nil {
+			fmt.Fprintf(os.Stderr, "%s: ERROR (%v)\n", status.Name, status.Err)
+		}
+	}
+
+	slices.SortFunc(statuses, sortStatuses)
+	maxProcessNameWidth := getMaxProcessNameWidth(statuses)
+
+	for _, status := range statuses {
+		if status.Err == nil {
+			fmt.Printf("%-*s   %s\t   %s\n", maxProcessNameWidth, status.Name, status.State, status.Description)
+		}
+	}
 }
 
 func updateAction(ctl *Controller, lineFields []string) {

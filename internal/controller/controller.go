@@ -22,8 +22,8 @@ type SupervisorInterface interface {
 	GetProcessNames() func(string) []string
 	StartRequest(processName string, replyChan chan<- []program.RequestReply)
 	StopRequest(processName string, replyChan chan<- []program.RequestReply)
-	// StatusRequest(processName string, replyChan chan<- string)
 	// RestartProgram(name string) error
+	StatusRequest(processName string, replyChan chan<- []program.ProcessStatus)
 }
 
 func NewEmbeddedController(supervisor SupervisorInterface) (*Controller, error) {

@@ -305,7 +305,7 @@ func (pm *ProgramManager) StartAllProcesses(replyChan chan<- []RequestReply) {
 	}
 
 	var replies []RequestReply
-	for i := 0; i < processCount; i++ {
+	for range processCount {
 		replies = append(replies, <-processReplyChan)
 	}
 
@@ -345,22 +345,43 @@ func (pm *ProgramManager) StopAllProcesses(replyChan chan<- []RequestReply) {
 	}
 
 	var replies []RequestReply
-	for i := 0; i < processCount; i++ {
+	for range processCount {
 		replies = append(replies, <-processReplyChan)
 	}
 
 	replyChan <- replies
 }
 
-// func (pm *ProgramManager) GetProcessStatus(processName string, replyChan chan<- string) *ProcessStatus {
-// 	mp, ok := pm.Processes[processName]
-// 	if !ok {
-// 		replyChan <- fmt.Sprintf("%s: ERROR (no such process)", processName)
-// 		return nil
-// 	}
+func (pm *ProgramManager) GetAllProcessesStatus(replyChan chan<- []ProcessStatus) {
+	processCount := len(pm.Processes)
+	processReplyChan := make(chan ProcessStatus, processCount)
 
-// 	return mp.getStatus(processName)
-// }
+	for processName := range pm.Processes {
+		go func(processName string) {
+			pm.GetProcessStatus(processName, processReplyChan)
+		}(processName)
+	}
+
+	var replies []ProcessStatus
+	for range processCount {
+		replies = append(replies, <-processReplyChan)
+	}
+
+	replyChan <- replies
+}
+
+func (pm *ProgramManager) GetProcessStatus(processName string, replyChan chan<- ProcessStatus) {
+	mp, ok := pm.Processes[processName]
+	if !ok {
+		replyChan <- ProcessStatus{
+			Name: processName,
+			Err:  fmt.Errorf("no such process"),
+		}
+		return
+	}
+
+	replyChan <- *mp.getStatus(processName)
+}
 
 func (pm *ProgramManager) checkProcessState(mp *ManagedProcess) {
 	if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
