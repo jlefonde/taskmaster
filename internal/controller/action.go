@@ -116,64 +116,51 @@ func getMaxProcessNameWidth(statuses []program.ProcessStatus) int {
 	return maxProcessNameWidth
 }
 
-func startAction(ctl *Controller, lineFields []string) {
-	if len(lineFields) == 0 {
-		fmt.Fprintln(os.Stderr, "*** invalid start syntax")
-		startHelper()
-		return
-	}
-
-	allFound := containsAll(lineFields)
-
-	for _, processName := range lineFields {
-		if allFound && processName != "all" {
-			continue
-		}
-
-		replyChan := make(chan []program.RequestReply, 1)
-		ctl.supervisor.StartRequest(processName, replyChan)
-
-		replies := <-replyChan
-		slices.SortFunc(replies, sortReplies)
-
-		for _, reply := range replies {
-			if reply.Err != nil {
-				fmt.Fprintf(os.Stderr, "%s: ERROR (%v)\n", reply.ProcessName, reply.Err)
-			} else {
-				fmt.Printf("%s: %s\n", reply.ProcessName, reply.Message)
-			}
+func displayRequestResults(replies []program.RequestReply) {
+	for _, reply := range replies {
+		if reply.Err != nil {
+			fmt.Fprintf(os.Stderr, "%s: ERROR (%v)\n", reply.ProcessName, reply.Err)
+		} else {
+			fmt.Printf("%s: %s\n", reply.ProcessName, reply.Message)
 		}
 	}
 }
 
-func stopAction(ctl *Controller, lineFields []string) {
+func processReplies(replyChan chan []program.RequestReply) {
+	replies := <-replyChan
+	slices.SortFunc(replies, sortReplies)
+
+	displayRequestResults(replies)
+}
+
+func executeProcessAction(lineFields []string, action string, helperFunc func(), actionFunc func(string, chan<- []program.RequestReply)) {
 	if len(lineFields) == 0 {
-		fmt.Fprintln(os.Stderr, "*** invalid stop syntax")
-		stopHelper()
+		fmt.Fprintf(os.Stderr, "*** invalid %s syntax\n", action)
+		helperFunc()
 		return
 	}
 
 	allFound := containsAll(lineFields)
 
-	for _, processName := range lineFields {
-		if allFound && processName != "all" {
-			continue
-		}
-
+	if allFound {
 		replyChan := make(chan []program.RequestReply, 1)
-		ctl.supervisor.StopRequest(processName, replyChan)
-
-		replies := <-replyChan
-		slices.SortFunc(replies, sortReplies)
-
-		for _, reply := range replies {
-			if reply.Err != nil {
-				fmt.Fprintf(os.Stderr, "%s: ERROR (%v)\n", reply.ProcessName, reply.Err)
-			} else {
-				fmt.Printf("%s: %s\n", reply.ProcessName, reply.Message)
-			}
+		actionFunc("all", replyChan)
+		processReplies(replyChan)
+	} else {
+		for _, processName := range lineFields {
+			replyChan := make(chan []program.RequestReply, 1)
+			actionFunc(processName, replyChan)
+			processReplies(replyChan)
 		}
 	}
+}
+
+func startAction(ctl *Controller, lineFields []string) {
+	executeProcessAction(lineFields, "start", startHelper, ctl.supervisor.StartRequest)
+}
+
+func stopAction(ctl *Controller, lineFields []string) {
+	executeProcessAction(lineFields, "stop", stopHelper, ctl.supervisor.StopRequest)
 }
 
 func restartAction(ctl *Controller, lineFields []string) {
