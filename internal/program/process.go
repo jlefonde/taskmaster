@@ -35,21 +35,20 @@ type ProcessStatus struct {
 }
 
 type ManagedProcess struct {
-	Name             string
-	Num              int
-	Cmd              *exec.Cmd
-	State            State
-	RestartRequested bool
-	StartTime        time.Time
-	StopTime         time.Time
-	ExitTime         time.Time
-	NextRestartTime  time.Time
-	RestartCount     int
-	ExitChan         chan ProcessExitInfo
-	Stdout           *os.File
-	Stderr           *os.File
-	StdoutLogFile    string
-	StderrLogFile    string
+	Name            string
+	Num             int
+	Cmd             *exec.Cmd
+	State           State
+	StartTime       time.Time
+	StopTime        time.Time
+	ExitTime        time.Time
+	NextRestartTime time.Time
+	RestartCount    int
+	ExitChan        chan ProcessExitInfo
+	Stdout          *os.File
+	Stderr          *os.File
+	StdoutLogFile   string
+	StderrLogFile   string
 }
 
 func newManagedProcess(processNum int, processName string, exitChan chan ProcessExitInfo) *ManagedProcess {
@@ -122,8 +121,7 @@ func (mp *ManagedProcess) newCmd(config *config.Program) (*exec.Cmd, error) {
 	if config.Umask != nil {
 		cmd = exec.Command("sh", "-c", fmt.Sprintf("umask %03o; exec %s", *config.Umask, config.Cmd))
 	} else {
-		// TODO: use directly config.Cmd
-		cmd = exec.Command("sh", "-c", config.Cmd)
+		cmd = exec.Command("sh", "-c", fmt.Sprintf("exec %s", config.Cmd))
 	}
 
 	cmd.Env = os.Environ()
@@ -194,7 +192,7 @@ func (mp *ManagedProcess) getDescription() string {
 			return fmt.Sprintf("pid %d, uptime %02d:%02d:%02d", mp.Cmd.Process.Pid, hours, minutes, seconds)
 		}
 	case EXITED, STOPPED:
-		return mp.ExitTime.Format("exited at: 2006-01-02 15:04:05 MST")
+		return fmt.Sprintf("%s: %s", strings.ToLower(string(mp.State)), mp.ExitTime.Format("2006-01-02 15:04:05 MST"))
 	case BACKOFF, FATAL:
 		return "exited too quickly"
 	default:

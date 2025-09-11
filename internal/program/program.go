@@ -116,10 +116,6 @@ func newTransitions() *map[State]map[Event]Transition {
 		STOPPING: {
 			PROCESS_STOPPED: {To: STOPPED, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Name, STOPPING, STOPPED)
-				if mp.RestartRequested {
-					mp.RestartRequested = false
-					return START
-				}
 				return ""
 			}},
 		},

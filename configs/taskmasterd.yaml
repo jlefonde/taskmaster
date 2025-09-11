@@ -29,5 +29,7 @@ programs:
         autorestart: never
     test:
         cmd: /home/jlefonde/Documents/taskmaster/test
+        stopsignal: USR1
+        stopsecs: 2
         env:
             TEST: "123"
