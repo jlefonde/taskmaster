@@ -41,65 +41,65 @@ func NewLogger(logFilePath string, logLevel LogLevel) (*Logger, error) {
 }
 
 func (l *Logger) Fatalf(format string, v ...any) {
-	if l.level <= FATAL {
+	if l.level >= FATAL {
 		l.logger.Fatalf(l.logLevels[FATAL]+format, v...)
 	}
 }
 
 func (l *Logger) Errorf(format string, v ...any) {
-	if l.level <= ERROR {
+	if l.level >= ERROR {
 		l.logger.Printf(l.logLevels[ERROR]+format, v...)
 	}
 }
 
 func (l *Logger) Warningf(format string, v ...any) {
-	if l.level <= WARNING {
+	if l.level >= WARNING {
 		l.logger.Printf(l.logLevels[WARNING]+format, v...)
 	}
 }
 
 func (l *Logger) Infof(format string, v ...any) {
-	if l.level <= INFO {
+	if l.level >= INFO {
 		l.logger.Printf(l.logLevels[INFO]+format, v...)
 	}
 }
 
 func (l *Logger) Debugf(format string, v ...any) {
-	if l.level <= DEBUG {
+	if l.level >= DEBUG {
 		l.logger.Printf(l.logLevels[DEBUG]+format, v...)
 	}
 }
 
 func (l *Logger) Fatal(v ...any) {
-	if l.level <= FATAL {
+	if l.level >= FATAL {
 		message := fmt.Sprint(v...)
 		l.logger.Println(l.logLevels[FATAL] + message)
 	}
 }
 
 func (l *Logger) Error(v ...any) {
-	if l.level <= ERROR {
+	if l.level >= ERROR {
 		message := fmt.Sprint(v...)
 		l.logger.Println(l.logLevels[ERROR] + message)
 	}
 }
 
 func (l *Logger) Warning(v ...any) {
-	if l.level <= WARNING {
+	if l.level >= WARNING {
 		message := fmt.Sprint(v...)
 		l.logger.Println(l.logLevels[WARNING] + message)
 	}
 }
 
 func (l *Logger) Info(v ...any) {
-	if l.level <= INFO {
+	if l.level >= INFO {
 		message := fmt.Sprint(v...)
 		l.logger.Println(l.logLevels[INFO] + message)
 	}
 }
 
 func (l *Logger) Debug(v ...any) {
-	if l.level <= DEBUG {
+	if l.level >= DEBUG {
 		message := fmt.Sprint(v...)
 		l.logger.Println(l.logLevels[DEBUG] + message)
 	}

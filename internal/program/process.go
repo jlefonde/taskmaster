@@ -193,6 +193,10 @@ func (mp *ManagedProcess) getDescription() string {
 			return fmt.Sprintf("pid %d, uptime %02d:%02d:%02d", mp.Cmd.Process.Pid, hours, minutes, seconds)
 		}
 	case EXITED, STOPPED:
+		if mp.State == STOPPED && mp.ExitTime.Equal(time.Time{}) {
+			return "not started"
+		}
+
 		return mp.ExitTime.Format("2006-01-02 15:04:05 MST")
 	case BACKOFF, FATAL:
 		return "exited too quickly"
