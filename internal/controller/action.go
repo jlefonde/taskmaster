@@ -23,7 +23,8 @@ const (
 	QUIT    Action = "quit"
 	EXIT    Action = "exit"
 
-	MIN_PROCESS_NAME_WIDTH int = 29
+	MIN_PROCESS_NAME_WIDTH    int = 29
+	MAX_PROCESS_COMPLETER_LEN int = 10
 )
 
 type actionHandler func(ctl *Controller, lineFields []string)
@@ -48,12 +49,21 @@ func newActionMetadata(name string, helper actionHelper, handler actionHandler, 
 	}
 }
 
+func newProcessCompleter(supervisor SupervisorInterface, depth int) *readline.PrefixCompleter {
+	if depth == 0 {
+		return readline.PcItemDynamic(supervisor.GetProcessNames())
+	}
+
+	return readline.PcItemDynamic(supervisor.GetProcessNames(), newProcessCompleter(supervisor, depth-1))
+}
+
 func newActions(supervisor SupervisorInterface) map[Action]*actionMetadata {
+	processCompleter := newProcessCompleter(supervisor, MAX_PROCESS_COMPLETER_LEN)
 	actions := map[Action]*actionMetadata{
-		START:   newActionMetadata(string(START), startHelper, startAction, readline.PcItemDynamic(supervisor.GetProcessNames())),
-		STOP:    newActionMetadata(string(STOP), stopHelper, stopAction, readline.PcItemDynamic(supervisor.GetProcessNames())),
-		RESTART: newActionMetadata(string(RESTART), restartHelper, restartAction, readline.PcItemDynamic(supervisor.GetProcessNames())),
-		STATUS:  newActionMetadata(string(STATUS), statusHelper, statusAction, readline.PcItemDynamic(supervisor.GetProcessNames())),
+		START:   newActionMetadata(string(START), startHelper, startAction, processCompleter),
+		STOP:    newActionMetadata(string(STOP), stopHelper, stopAction, processCompleter),
+		RESTART: newActionMetadata(string(RESTART), restartHelper, restartAction, processCompleter),
+		STATUS:  newActionMetadata(string(STATUS), statusHelper, statusAction, processCompleter),
 		UPDATE:  newActionMetadata(string(UPDATE), updateHelper, updateAction, nil),
 		QUIT:    newActionMetadata(string(QUIT), quitHelper, shutdownAction, nil),
 		EXIT:    newActionMetadata(string(EXIT), exitHelper, shutdownAction, nil),
