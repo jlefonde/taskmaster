@@ -40,31 +40,31 @@ func NewLogger(logFilePath string, logLevel LogLevel) (*Logger, error) {
 	}}, nil
 }
 
-func (l *Logger) Fatalf(format string, v ...interface{}) {
+func (l *Logger) Fatalf(format string, v ...any) {
 	if l.level <= FATAL {
 		l.logger.Fatalf(l.logLevels[FATAL]+format, v...)
 	}
 }
 
-func (l *Logger) Errorf(format string, v ...interface{}) {
+func (l *Logger) Errorf(format string, v ...any) {
 	if l.level <= ERROR {
 		l.logger.Printf(l.logLevels[ERROR]+format, v...)
 	}
 }
 
-func (l *Logger) Warningf(format string, v ...interface{}) {
+func (l *Logger) Warningf(format string, v ...any) {
 	if l.level <= WARNING {
 		l.logger.Printf(l.logLevels[WARNING]+format, v...)
 	}
 }
 
-func (l *Logger) Infof(format string, v ...interface{}) {
+func (l *Logger) Infof(format string, v ...any) {
 	if l.level <= INFO {
 		l.logger.Printf(l.logLevels[INFO]+format, v...)
 	}
 }
 
-func (l *Logger) Debugf(format string, v ...interface{}) {
+func (l *Logger) Debugf(format string, v ...any) {
 	if l.level <= DEBUG {
 		l.logger.Printf(l.logLevels[DEBUG]+format, v...)
 	}

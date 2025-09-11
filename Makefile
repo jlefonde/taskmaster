@@ -11,4 +11,4 @@ $(NAME):
 clean:
 	@rm -rf $(BIN_DIR)
 
-.PHONY: all clean $(APPS)
+.PHONY: all clean $(NAME)

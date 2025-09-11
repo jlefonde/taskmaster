@@ -170,6 +170,7 @@ func (mp *ManagedProcess) shouldRestart(autoRestart config.AutoRestart, exitCode
 				return false
 			}
 		}
+
 		return true
 	default:
 		return false

@@ -105,7 +105,6 @@ func (s *Supervisor) Run() {
 		}
 
 		wg.Wait()
-
 		os.Exit(1)
 	}
 
