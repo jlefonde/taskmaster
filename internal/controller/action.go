@@ -167,7 +167,8 @@ func stopAction(ctl *Controller, lineFields []string) {
 }
 
 func restartAction(ctl *Controller, lineFields []string) {
-
+	stopAction(ctl, lineFields)
+	startAction(ctl, lineFields)
 }
 
 func statusAction(ctl *Controller, lineFields []string) {
