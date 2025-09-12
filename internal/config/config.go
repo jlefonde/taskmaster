@@ -3,11 +3,12 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log/syslog"
 	"os"
 	"os/user"
 	"path/filepath"
 	"reflect"
-	s "strings"
+	"strings"
 	"syscall"
 	"taskmaster/internal/logger"
 
@@ -38,7 +39,7 @@ type Taskmasterd struct {
 	NoCleanup   bool            `mapstructure:"nocleanup"`
 	ChildLogDir string          `mapstructure:"childlogdir"`
 	LogFile     string          `mapstructure:"logfile"`
-	LogLevel    logger.LogLevel `mapstructure:"loglevel"`
+	LogLevel    syslog.Priority `mapstructure:"loglevel"`
 }
 
 type Program struct {
@@ -124,11 +125,13 @@ func validateTaskmasterd(taskmasterd Taskmasterd) error {
 		return err
 	}
 
-	if err := checkFilePath(taskmasterd.LogFile); err != nil {
-		return err
+	if taskmasterd.LogFile != logger.SYSLOG {
+		if err := checkFilePath(taskmasterd.LogFile); err != nil {
+			return err
+		}
 	}
 
-	if taskmasterd.LogLevel == logger.UNKNOWN {
+	if taskmasterd.LogLevel == logger.LOG_UNKNOWN {
 		return errors.New("invalid 'loglevel'")
 	}
 
@@ -173,20 +176,20 @@ func validateProgram(program Program) error {
 	return nil
 }
 
-func getLogLevelFromStr(logLevelStr string) (logger.LogLevel, error) {
-	logLevelMap := map[string]logger.LogLevel{
-		"fatal":   logger.FATAL,
-		"error":   logger.ERROR,
-		"warning": logger.WARNING,
-		"info":    logger.INFO,
-		"debug":   logger.DEBUG,
+func getLogLevelFromStr(logLevelStr string) (syslog.Priority, error) {
+	logLevelMap := map[string]syslog.Priority{
+		"critical": syslog.LOG_CRIT,
+		"error":    syslog.LOG_ERR,
+		"warning":  syslog.LOG_WARNING,
+		"info":     syslog.LOG_INFO,
+		"debug":    syslog.LOG_DEBUG,
 	}
 
-	if val, found := logLevelMap[s.ToLower(logLevelStr)]; found {
+	if val, found := logLevelMap[strings.ToLower(logLevelStr)]; found {
 		return val, nil
 	}
 
-	return logger.UNKNOWN, errors.New("invalid 'loglevel'")
+	return logger.LOG_UNKNOWN, errors.New("invalid 'loglevel'")
 }
 
 func parseLogLevel(taskmasterdMap map[string]any, taskmasterd *Taskmasterd) {
@@ -224,7 +227,7 @@ func parseAutoRestart(programMap map[string]any, program *Program) {
 		"on-failure": AUTORESTART_ON_FAILURE,
 	}
 
-	if val, found := autoRestartMap[s.ToLower(autoRestartStr)]; found {
+	if val, found := autoRestartMap[strings.ToLower(autoRestartStr)]; found {
 		program.AutoRestart = val
 	}
 
@@ -280,8 +283,8 @@ func parseStopSignal(programMap map[string]any, program *Program) {
 		"XFSZ":   syscall.SIGXFSZ,
 	}
 
-	stopSignalStr = s.ToUpper(stopSignalStr)
-	stopSignalStr, _ = s.CutPrefix(stopSignalStr, "SIG")
+	stopSignalStr = strings.ToUpper(stopSignalStr)
+	stopSignalStr, _ = strings.CutPrefix(stopSignalStr, "SIG")
 
 	if sig, found := signalMap[stopSignalStr]; found {
 		program.StopSignal = sig
@@ -303,7 +306,7 @@ func getDefaultTaskmasterd() (*Taskmasterd, error) {
 		NoCleanup:   false,
 		ChildLogDir: os.TempDir(),
 		LogFile:     cwd + "/taskmasterd.log",
-		LogLevel:    logger.INFO,
+		LogLevel:    syslog.LOG_INFO,
 	}
 
 	return &taskmasterd, nil
@@ -409,7 +412,7 @@ func readConfigFile(configPath string) ([]byte, error) {
 		}
 
 		if len(conf) == 0 {
-			defaultLocationsStr := "(" + s.Join(defaultLocations, ", ") + ")"
+			defaultLocationsStr := "(" + strings.Join(defaultLocations, ", ") + ")"
 			return nil, fmt.Errorf("no configuration file found at default locations %s", defaultLocationsStr)
 		}
 
@@ -470,7 +473,7 @@ func newTaskmasterd(ctx *Context) (*Taskmasterd, error) {
 		NoCleanup:   ctx.NoCleanup,
 		ChildLogDir: ctx.ChildLogDir,
 		LogFile:     ctx.LogFile,
-		LogLevel:    logger.NONE,
+		LogLevel:    logger.LOG_NONE,
 	}
 
 	if ctx.LogLevel != "" {
@@ -508,7 +511,7 @@ func (config *Config) overrideTaskmasterd(override *Taskmasterd) {
 		base.LogFile = override.LogFile
 	}
 
-	if override.LogLevel != logger.NONE {
+	if override.LogLevel != logger.LOG_NONE {
 		base.LogLevel = override.LogLevel
 	}
 }

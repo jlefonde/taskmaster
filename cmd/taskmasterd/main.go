@@ -31,7 +31,7 @@ func init() {
 		logFileDefault     = ""
 		logFileUsage       = "The path to the taskmasterd activity log."
 		logLevelDefault    = ""
-		logLevelUsage      = "The logging level at which taskmaster should write to the activity log. [DEBUG, INFO, WARNING, ERROR, FATAL]"
+		logLevelUsage      = "The logging level at which taskmaster should write to the activity log. [DEBUG, INFO, WARNING, ERROR, CRITICAL]"
 	)
 
 	flag.BoolFunc("version", versionUsage, version.PrintVersion)
