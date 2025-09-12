@@ -113,6 +113,7 @@ func newTransitions() *map[State]map[Event]Transition {
 			}},
 			TIMEOUT: {To: FATAL, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Name, BACKOFF, FATAL)
+				pm.Log.Infof("gave up: '%s' entered FATAL state, too many start retries too quickly", mp.Name)
 				return ""
 			}},
 		},
@@ -213,7 +214,7 @@ func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
 }
 
 func (pm *ProgramManager) restartProcess(mp *ManagedProcess) Event {
-	if pm.Config.AutoRestart == config.AUTORESTART_NEVER || mp.RestartCount >= pm.Config.StartRetries {
+	if mp.RestartCount > pm.Config.StartRetries {
 		return TIMEOUT
 	}
 
