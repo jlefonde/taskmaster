@@ -43,18 +43,12 @@ func NewLogger(logFilePath string, logLevel syslog.Priority) (*Logger, error) {
 		}, nil
 	}
 
-	logger, err := syslog.NewLogger(logLevel, log.Lmsgprefix|log.Ldate|log.Ltime)
-	if err != nil {
-		return nil, err
-	}
-
-	syslog, err := syslog.Dial("unixgram", "/dev/log", syslog.LOG_WARNING|syslog.LOG_USER, "taskmasterd")
+	syslog, err := syslog.Dial("unixgram", "/dev/log", syslog.LOG_WARNING|syslog.LOG_DAEMON, "taskmasterd")
 	if err != nil {
 		return nil, err
 	}
 
 	return &Logger{
-		logger:    logger,
 		level:     logLevel,
 		logLevels: logLevels,
 		syslog:    syslog,
@@ -62,131 +56,141 @@ func NewLogger(logFilePath string, logLevel syslog.Priority) (*Logger, error) {
 }
 
 func (l *Logger) Criticalf(format string, v ...any) {
+	if l.level > syslog.LOG_CRIT {
+		return
+	}
+
 	msg := fmt.Sprintf(l.logLevels[syslog.LOG_CRIT]+format, v...)
 
 	if l.syslog != nil {
 		l.syslog.Crit(msg)
-		return
-	}
-
-	if l.level <= syslog.LOG_CRIT {
+	} else if l.logger != nil {
 		l.logger.Print(msg)
 	}
 }
 
 func (l *Logger) Errorf(format string, v ...any) {
+	if l.level > syslog.LOG_ERR {
+		return
+	}
+
 	msg := fmt.Sprintf(l.logLevels[syslog.LOG_ERR]+format, v...)
 
 	if l.syslog != nil {
 		l.syslog.Err(msg)
-		return
-	}
-
-	if l.level <= syslog.LOG_ERR {
+	} else if l.logger != nil {
 		l.logger.Print(msg)
 	}
 }
 
 func (l *Logger) Warningf(format string, v ...any) {
+	if l.level > syslog.LOG_WARNING {
+		return
+	}
+
 	msg := fmt.Sprintf(l.logLevels[syslog.LOG_WARNING]+format, v...)
 
 	if l.syslog != nil {
 		l.syslog.Warning(msg)
-		return
-	}
-
-	if l.level <= syslog.LOG_WARNING {
+	} else if l.logger != nil {
 		l.logger.Print(msg)
 	}
 }
 
 func (l *Logger) Infof(format string, v ...any) {
+	if l.level > syslog.LOG_INFO {
+		return
+	}
+
 	msg := fmt.Sprintf(l.logLevels[syslog.LOG_INFO]+format, v...)
 
 	if l.syslog != nil {
 		l.syslog.Info(msg)
-		return
-	}
-
-	if l.level <= syslog.LOG_INFO {
+	} else if l.logger != nil {
 		l.logger.Print(msg)
 	}
 }
 
 func (l *Logger) Debugf(format string, v ...any) {
+	if l.level > syslog.LOG_DEBUG {
+		return
+	}
+
 	msg := fmt.Sprintf(l.logLevels[syslog.LOG_DEBUG]+format, v...)
 
 	if l.syslog != nil {
 		l.syslog.Debug(msg)
-		return
-	}
-
-	if l.level <= syslog.LOG_DEBUG {
+	} else if l.logger != nil {
 		l.logger.Print(msg)
 	}
 }
 
 func (l *Logger) Critical(v ...any) {
+	if l.level > syslog.LOG_CRIT {
+		return
+	}
+
 	msg := l.logLevels[syslog.LOG_CRIT] + fmt.Sprint(v...)
 
 	if l.syslog != nil {
 		l.syslog.Crit(msg)
-		return
-	}
-
-	if l.level <= syslog.LOG_CRIT {
+	} else if l.logger != nil {
 		l.logger.Println(msg)
 	}
 }
 
 func (l *Logger) Error(v ...any) {
+	if l.level > syslog.LOG_ERR {
+		return
+	}
+
 	msg := l.logLevels[syslog.LOG_ERR] + fmt.Sprint(v...)
 
 	if l.syslog != nil {
 		l.syslog.Err(msg)
-		return
-	}
-
-	if l.level <= syslog.LOG_ERR {
+	} else if l.logger != nil {
 		l.logger.Println(msg)
 	}
 }
 
 func (l *Logger) Warning(v ...any) {
+	if l.level > syslog.LOG_WARNING {
+		return
+	}
+
 	msg := l.logLevels[syslog.LOG_WARNING] + fmt.Sprint(v...)
 
 	if l.syslog != nil {
 		l.syslog.Warning(msg)
-		return
-	}
-
-	if l.level <= syslog.LOG_WARNING {
+	} else if l.logger != nil {
 		l.logger.Println(msg)
 	}
 }
 
 func (l *Logger) Info(v ...any) {
+	if l.level > syslog.LOG_INFO {
+		return
+	}
+
 	msg := l.logLevels[syslog.LOG_INFO] + fmt.Sprint(v...)
 
 	if l.syslog != nil {
 		l.syslog.Info(msg)
-		return
-	}
-
-	if l.level <= syslog.LOG_INFO {
+	} else if l.logger != nil {
 		l.logger.Println(msg)
 	}
 }
 
 func (l *Logger) Debug(v ...any) {
+	if l.level > syslog.LOG_DEBUG {
+		return
+	}
+
 	msg := l.logLevels[syslog.LOG_DEBUG] + fmt.Sprint(v...)
 
 	if l.syslog != nil {
 		l.syslog.Debug(msg)
-		return
-	}
-
-	if l.level <= syslog.LOG_DEBUG {
+	} else if l.logger != nil {
 		l.logger.Println(msg)
 	}
 }
