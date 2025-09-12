@@ -79,7 +79,7 @@ func (s *Supervisor) Run() {
 		}
 	}
 
-	s.log.Debugf("taskmaster: %+v\n", s.config.Taskmasterd)
+	s.log.Debugf("taskmaster: %+v", s.config.Taskmasterd)
 
 	quitSigs := make(chan os.Signal, 1)
 	signal.Notify(quitSigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)

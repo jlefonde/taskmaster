@@ -236,7 +236,7 @@ func (pm *ProgramManager) stopProcess(mp *ManagedProcess) Event {
 }
 
 func (pm *ProgramManager) logTransition(processName string, from State, to State) {
-	pm.Log.Infof("%s %s -> %s\n", processName, from, to)
+	pm.Log.Infof("%s %s -> %s", processName, from, to)
 }
 
 func (pm *ProgramManager) forceStop(mp *ManagedProcess) {
@@ -397,7 +397,7 @@ func (pm *ProgramManager) checkProcessState(mp *ManagedProcess) {
 }
 
 func (pm *ProgramManager) Run() {
-	pm.Log.Debugf("%s: %+v\n", pm.Name, pm.Config)
+	pm.Log.Debugf("%s: %+v", pm.Name, pm.Config)
 
 	for processNum := range pm.Config.NumProcs {
 		processName := pm.getProcessName(processNum)

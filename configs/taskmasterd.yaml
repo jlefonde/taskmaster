@@ -3,7 +3,7 @@ taskmasterd:
     nocleanup: false
     childlogdir: /var/log/taskmasterd/
     logfile: /var/log/taskmasterd/taskmasterd.log
-    loglevel: error
+    loglevel: critical
 programs:
     tail:
         cmd: tail -f

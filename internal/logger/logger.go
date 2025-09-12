@@ -12,6 +12,13 @@ const (
 	LOG_UNKNOWN syslog.Priority = 2000
 
 	SYSLOG string = "syslog"
+
+	COLOR_CRITICAL = "\033[1;38;5;196m" // Bold red
+	COLOR_ERROR    = "\033[38;5;160m"   // Red
+	COLOR_WARNING  = "\033[38;5;220m"   // Yellow
+	COLOR_INFO     = "\033[38;5;255m"   // White
+	COLOR_DEBUG    = "\033[38;5;246m"   // Gray
+	COLOR_RESET    = "\033[0m"
 )
 
 type Logger struct {
@@ -37,7 +44,7 @@ func NewLogger(logFilePath string, logLevel syslog.Priority) (*Logger, error) {
 		}
 
 		return &Logger{
-			logger:    log.New(logFile, "", log.Lmsgprefix|log.Ldate|log.Ltime),
+			logger:    log.New(logFile, "taskmasterd: ", log.Lmsgprefix|log.Ldate|log.Ltime),
 			level:     logLevel,
 			logLevels: logLevels,
 		}, nil
@@ -65,7 +72,7 @@ func (l *Logger) Criticalf(format string, v ...any) {
 	if l.syslog != nil {
 		l.syslog.Crit(msg)
 	} else if l.logger != nil {
-		l.logger.Print(msg)
+		l.logger.Print(COLOR_CRITICAL + msg + COLOR_RESET)
 	}
 }
 
@@ -79,7 +86,7 @@ func (l *Logger) Errorf(format string, v ...any) {
 	if l.syslog != nil {
 		l.syslog.Err(msg)
 	} else if l.logger != nil {
-		l.logger.Print(msg)
+		l.logger.Print(COLOR_ERROR + msg + COLOR_RESET)
 	}
 }
 
@@ -93,7 +100,7 @@ func (l *Logger) Warningf(format string, v ...any) {
 	if l.syslog != nil {
 		l.syslog.Warning(msg)
 	} else if l.logger != nil {
-		l.logger.Print(msg)
+		l.logger.Print(COLOR_WARNING + msg + COLOR_RESET)
 	}
 }
 
@@ -107,7 +114,7 @@ func (l *Logger) Infof(format string, v ...any) {
 	if l.syslog != nil {
 		l.syslog.Info(msg)
 	} else if l.logger != nil {
-		l.logger.Print(msg)
+		l.logger.Print(COLOR_INFO + msg + COLOR_RESET)
 	}
 }
 
@@ -121,7 +128,7 @@ func (l *Logger) Debugf(format string, v ...any) {
 	if l.syslog != nil {
 		l.syslog.Debug(msg)
 	} else if l.logger != nil {
-		l.logger.Print(msg)
+		l.logger.Print(COLOR_DEBUG + msg + COLOR_RESET)
 	}
 }
 
@@ -135,7 +142,7 @@ func (l *Logger) Critical(v ...any) {
 	if l.syslog != nil {
 		l.syslog.Crit(msg)
 	} else if l.logger != nil {
-		l.logger.Println(msg)
+		l.logger.Println(COLOR_CRITICAL + msg + COLOR_RESET)
 	}
 }
 
@@ -149,7 +156,7 @@ func (l *Logger) Error(v ...any) {
 	if l.syslog != nil {
 		l.syslog.Err(msg)
 	} else if l.logger != nil {
-		l.logger.Println(msg)
+		l.logger.Println(COLOR_ERROR + msg + COLOR_RESET)
 	}
 }
 
@@ -163,7 +170,7 @@ func (l *Logger) Warning(v ...any) {
 	if l.syslog != nil {
 		l.syslog.Warning(msg)
 	} else if l.logger != nil {
-		l.logger.Println(msg)
+		l.logger.Println(COLOR_WARNING + msg + COLOR_RESET)
 	}
 }
 
@@ -177,7 +184,7 @@ func (l *Logger) Info(v ...any) {
 	if l.syslog != nil {
 		l.syslog.Info(msg)
 	} else if l.logger != nil {
-		l.logger.Println(msg)
+		l.logger.Println(COLOR_INFO + msg + COLOR_RESET)
 	}
 }
 
@@ -191,6 +198,6 @@ func (l *Logger) Debug(v ...any) {
 	if l.syslog != nil {
 		l.syslog.Debug(msg)
 	} else if l.logger != nil {
-		l.logger.Println(msg)
+		l.logger.Println(COLOR_DEBUG + msg + COLOR_RESET)
 	}
 }
