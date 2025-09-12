@@ -86,8 +86,9 @@ func (ctl *Controller) Start() {
 			continue
 		}
 
-		if action.handler != nil {
-			action.handler(ctl, lineFields[1:])
+		if err := action.handler(ctl, lineFields[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "*** invalid %s syntax\n", actionName)
+			action.helper()
 		}
 	}
 }

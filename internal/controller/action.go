@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -27,7 +28,7 @@ const (
 	MAX_PROCESS_COMPLETER_LEN int = 10
 )
 
-type actionHandler func(ctl *Controller, lineFields []string)
+type actionHandler func(ctl *Controller, lineFields []string) error
 type actionHelper func()
 
 type actionMetadata struct {
@@ -133,11 +134,9 @@ func processReplies(replyChan chan []program.RequestReply) {
 	displayRequestResults(replies)
 }
 
-func executeProcessAction(lineFields []string, action string, helperFunc func(), actionFunc func(string, chan<- []program.RequestReply)) {
+func executeProcessAction(lineFields []string, actionFunc func(string, chan<- []program.RequestReply)) error {
 	if len(lineFields) == 0 {
-		fmt.Fprintf(os.Stderr, "*** invalid %s syntax\n", action)
-		helperFunc()
-		return
+		return errors.New("invalid action syntax")
 	}
 
 	allFound := containsAll(lineFields)
@@ -153,26 +152,33 @@ func executeProcessAction(lineFields []string, action string, helperFunc func(),
 			processReplies(replyChan)
 		}
 	}
+
+	return nil
 }
 
-func startAction(ctl *Controller, lineFields []string) {
-	executeProcessAction(lineFields, "start", startHelper, ctl.supervisor.StartRequest)
+func startAction(ctl *Controller, lineFields []string) error {
+	return executeProcessAction(lineFields, ctl.supervisor.StartRequest)
 }
 
-func stopAction(ctl *Controller, lineFields []string) {
-	executeProcessAction(lineFields, "stop", stopHelper, ctl.supervisor.StopRequest)
+func stopAction(ctl *Controller, lineFields []string) error {
+	return executeProcessAction(lineFields, ctl.supervisor.StopRequest)
 }
 
-func restartAction(ctl *Controller, lineFields []string) {
-	stopAction(ctl, lineFields)
-	startAction(ctl, lineFields)
+func restartAction(ctl *Controller, lineFields []string) error {
+	if err := stopAction(ctl, lineFields); err != nil {
+		return err
+	}
+
+	if err := startAction(ctl, lineFields); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func statusAction(ctl *Controller, lineFields []string) {
+func statusAction(ctl *Controller, lineFields []string) error {
 	if len(lineFields) == 0 {
-		fmt.Fprintln(os.Stderr, "*** invalid status syntax")
-		statusHelper()
-		return
+		return errors.New("invalid action syntax")
 	}
 
 	allFound := containsAll(lineFields)
@@ -206,17 +212,21 @@ func statusAction(ctl *Controller, lineFields []string) {
 			fmt.Printf("%-*s   %s\t   %s\n", maxProcessNameWidth, status.Name, status.State, status.Description)
 		}
 	}
+
+	return nil
 }
 
-func updateAction(ctl *Controller, lineFields []string) {
+func updateAction(ctl *Controller, lineFields []string) error {
 	fmt.Println("Updating configuration")
+	return nil
 }
 
-func shutdownAction(ctl *Controller, lineFields []string) {
+func shutdownAction(ctl *Controller, lineFields []string) error {
 	ctl.running = false
+	return nil
 }
 
-func helpAction(ctl *Controller, lineFields []string) {
+func helpAction(ctl *Controller, lineFields []string) error {
 	if len(lineFields) == 0 {
 		fmt.Println("┌────────────────────── Available Actions ─────────────────────┐")
 		fmt.Println("│ Type 'help <action>'                                         │")
@@ -244,13 +254,15 @@ func helpAction(ctl *Controller, lineFields []string) {
 		if !ok {
 			fmt.Fprintln(os.Stderr, "*** no help available for", lineFields[0])
 			fmt.Fprintln(os.Stderr, "*** type 'help' for a list of available actions")
-			return
+			return nil
 		}
 
 		action.helper()
 	} else {
 		fmt.Fprintln(os.Stderr, "*** invalid help syntax. Use: help <action>")
 	}
+
+	return nil
 }
 
 func startHelper() {

@@ -98,6 +98,7 @@ func (s *Supervisor) Run() {
 
 	ctl, err := controller.NewEmbeddedController(s)
 	if err != nil {
+		// TODO: maybe use FATAL but avoid having fatal exit on its own
 		s.log.Error("failed to create controller: ", err)
 
 		for _, pm := range s.programManagers {
