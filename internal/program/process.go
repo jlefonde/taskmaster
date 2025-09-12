@@ -43,6 +43,7 @@ type ManagedProcess struct {
 	StopTime        time.Time
 	ExitTime        time.Time
 	NextRestartTime time.Time
+	StoppedSignal   os.Signal
 	RestartCount    int
 	ExitChan        chan ProcessExitInfo
 	Stdout          *os.File
@@ -51,12 +52,13 @@ type ManagedProcess struct {
 	StderrLogFile   string
 }
 
-func newManagedProcess(processNum int, processName string, exitChan chan ProcessExitInfo) *ManagedProcess {
+func newManagedProcess(processNum int, processName string, exitChan chan ProcessExitInfo, stoppedSignal os.Signal) *ManagedProcess {
 	return &ManagedProcess{
-		Name:     processName,
-		Num:      processNum,
-		State:    STOPPED,
-		ExitChan: exitChan,
+		Name:          processName,
+		Num:           processNum,
+		State:         STOPPED,
+		ExitChan:      exitChan,
+		StoppedSignal: stoppedSignal,
 	}
 }
 
@@ -158,6 +160,23 @@ func (mp *ManagedProcess) hasStopTimeoutExpired(stopSecs int) bool {
 	return time.Now().After(mp.StopTime.Add(time.Duration(stopSecs) * time.Second))
 }
 
+func (mp *ManagedProcess) exitCodeExpected(processExitCode int, exitCodes []int) bool {
+	for _, exitCode := range exitCodes {
+		if processExitCode == exitCode {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (mp *ManagedProcess) exitExpected(processExitCode int, exitCodes []int, startSecs int) bool {
+	exitCodeExpected := mp.exitCodeExpected(processExitCode, exitCodes)
+	uptime := mp.ExitTime.Sub(mp.StartTime)
+
+	return exitCodeExpected && uptime > time.Duration(startSecs)
+}
+
 func (mp *ManagedProcess) shouldRestart(autoRestart config.AutoRestart, exitCodes []int) bool {
 	switch autoRestart {
 	case config.AUTORESTART_NEVER:
@@ -165,13 +184,7 @@ func (mp *ManagedProcess) shouldRestart(autoRestart config.AutoRestart, exitCode
 	case config.AUTORESTART_ALWAYS:
 		return true
 	case config.AUTORESTART_ON_FAILURE:
-		for _, exitCode := range exitCodes {
-			if mp.Cmd.ProcessState.ExitCode() == exitCode {
-				return false
-			}
-		}
-
-		return true
+		return !mp.exitCodeExpected(mp.Cmd.ProcessState.ExitCode(), exitCodes)
 	default:
 		return false
 	}

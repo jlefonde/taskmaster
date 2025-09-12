@@ -73,13 +73,13 @@ func (s *Supervisor) GetProcessNames() func(string) []string {
 }
 
 func (s *Supervisor) Run() {
+	s.log.Info("taskmasterd started with pid ", os.Getpid())
+
 	if !s.config.Taskmasterd.NoCleanup {
 		if err := cleanupLogFiles(s.log, s.config.Taskmasterd.ChildLogDir); err != nil {
 			s.log.Warning("couldn't cleanup log files:", err)
 		}
 	}
-
-	s.log.Debugf("taskmaster: %+v", s.config.Taskmasterd)
 
 	quitSigs := make(chan os.Signal, 1)
 	signal.Notify(quitSigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)

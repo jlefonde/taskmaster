@@ -75,6 +75,9 @@ func newTransitions() *map[State]map[Event]Transition {
 		STARTING: {
 			PROCESS_STARTED: {To: RUNNING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
 				pm.logTransition(mp.Name, STARTING, RUNNING)
+				pm.replyToRequest(mp, "started", false)
+				pm.Log.Infof("success: '%s' entered RUNNING state, process has stayed up for > than %d seconds (startsecs)",
+					mp.Name, pm.Config.StartSecs)
 				mp.RestartCount = 0
 				return ""
 			}},
@@ -195,11 +198,10 @@ func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
 	mp.StartTime = time.Now()
 	mp.Cmd = cmd
 
+	pm.Log.Infof("spawned: '%s' with pid %d", mp.Name, mp.Cmd.Process.Pid)
+
 	go func(mp *ManagedProcess) {
 		exitInfo := ProcessExitInfo{Mp: mp, ExitTime: time.Now(), Err: mp.Cmd.Wait()}
-		if exitInfo.Err != nil {
-			pm.Log.Warningf("process %d exited: %v", mp.Cmd.Process.Pid, exitInfo.Err)
-		}
 		mp.ExitChan <- exitInfo
 	}(mp)
 
@@ -223,9 +225,9 @@ func (pm *ProgramManager) restartProcess(mp *ManagedProcess) Event {
 
 func (pm *ProgramManager) stopProcess(mp *ManagedProcess) Event {
 	pgid := mp.Cmd.Process.Pid
+	pm.Log.Warningf("killing '%s' (%d) with %s", mp.Name, mp.Cmd.Process.Pid, pm.Config.StopSignal)
 	if err := syscall.Kill(-pgid, pm.Config.StopSignal); err != nil {
-		pm.Log.Warningf("failed to send stop signal to process %d: %v", mp.Cmd.Process.Pid, err)
-		mp.StopTime = time.Now()
+		pm.Log.Warningf("failed to send stop signal to '%s' (%d): %v", mp.Name, mp.Cmd.Process.Pid, err)
 		pm.replyToRequest(mp, "failed to stop", true)
 		return PROCESS_STOPPED
 	}
@@ -236,18 +238,16 @@ func (pm *ProgramManager) stopProcess(mp *ManagedProcess) Event {
 }
 
 func (pm *ProgramManager) logTransition(processName string, from State, to State) {
-	pm.Log.Infof("%s %s -> %s", processName, from, to)
+	pm.Log.Debugf("%s [%s -> %s]", processName, from, to)
 }
 
 func (pm *ProgramManager) forceStop(mp *ManagedProcess) {
-	if mp.Cmd == nil || mp.Cmd.Process == nil {
-		pm.sendEvent(PROCESS_STOPPED, mp)
-	}
+	mp.StoppedSignal = syscall.SIGKILL
 
-	pm.Log.Warningf("process %d did not stop gracefully, sending SIGKILL", mp.Cmd.Process.Pid)
+	pm.Log.Warningf("killing '%s' (%d) with sigkill: process didn't stop gracefully", mp.Name, mp.Cmd.Process.Pid)
 	pgid := mp.Cmd.Process.Pid
 	if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
-		pm.Log.Errorf("failed to SIGKILL process %d: %v", mp.Cmd.Process.Pid, err)
+		pm.Log.Errorf("failed to send sigkill to '%s' (%d): %v", mp.Name, mp.Cmd.Process.Pid, err)
 	}
 }
 
@@ -386,9 +386,12 @@ func (pm *ProgramManager) GetProcessStatus(processName string, replyChan chan<- 
 func (pm *ProgramManager) checkProcessState(mp *ManagedProcess) {
 	if mp.State == STARTING && mp.hasStartTimeoutExpired(pm.Config.StartSecs) {
 		pm.sendEvent(PROCESS_STARTED, mp)
-		pm.replyToRequest(mp, "started", false)
-	} else if mp.State == STOPPING && mp.hasStopTimeoutExpired(pm.Config.StopSecs) {
-		pm.forceStop(mp)
+	} else if mp.State == STOPPING {
+		if mp.hasStopTimeoutExpired(pm.Config.StopSecs) {
+			pm.forceStop(mp)
+		} else {
+			pm.Log.Infof("waiting for '%s' to stop", mp.Name)
+		}
 	} else if mp.State == EXITED && mp.shouldRestart(pm.Config.AutoRestart, pm.Config.ExitCodes) && !pm.Terminating {
 		pm.sendEvent(START, mp)
 	} else if mp.State == BACKOFF && time.Now().After(mp.NextRestartTime) && !pm.Terminating {
@@ -397,11 +400,9 @@ func (pm *ProgramManager) checkProcessState(mp *ManagedProcess) {
 }
 
 func (pm *ProgramManager) Run() {
-	pm.Log.Debugf("%s: %+v", pm.Name, pm.Config)
-
 	for processNum := range pm.Config.NumProcs {
 		processName := pm.getProcessName(processNum)
-		pm.Processes[processName] = newManagedProcess(processNum, processName, pm.ExitChan)
+		pm.Processes[processName] = newManagedProcess(processNum, processName, pm.ExitChan, pm.Config.StopSignal)
 
 		if pm.Config.AutoStart {
 			pm.sendEvent(START, pm.Processes[processName])
@@ -417,7 +418,6 @@ func (pm *ProgramManager) Run() {
 			pm.initiateShutdown()
 
 			if pm.allProcessesTerminated() {
-				pm.Log.Infof("stopped program manager: %s", pm.Name)
 				return
 			}
 		case exit := <-pm.ExitChan:
@@ -426,9 +426,19 @@ func (pm *ProgramManager) Run() {
 
 			if mp.State == STOPPING {
 				pm.sendEvent(PROCESS_STOPPED, mp)
+
+				pm.Log.Infof("stopped: %s (%s)", mp.Name, mp.StoppedSignal)
 				pm.replyToRequest(mp, "stopped", false)
 			} else {
 				pm.sendEvent(PROCESS_EXITED, mp)
+
+				exitCode := mp.Cmd.ProcessState.ExitCode()
+				if mp.exitExpected(exitCode, pm.Config.ExitCodes, pm.Config.StartSecs) {
+					pm.Log.Infof("exited: %s (exit status %d; expected)", mp.Name, exitCode)
+				} else {
+					pm.Log.Warningf("exited: %s (exit status %d; not expected)", mp.Name, exitCode)
+				}
+
 				pm.replyToRequest(mp, fmt.Sprintf("already %s", strings.ToLower(string(mp.State))), true)
 			}
 		case <-ticker.C:
@@ -440,6 +450,5 @@ func (pm *ProgramManager) Run() {
 }
 
 func (pm *ProgramManager) Stop() {
-	pm.Log.Infof("stopping program manager: %s", pm.Name)
 	close(pm.StopChan)
 }
