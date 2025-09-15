@@ -129,33 +129,52 @@ func (s *Supervisor) StatusRequest(processName string, replyChan chan<- []progra
 	replyChan <- []program.ProcessStatus{<-processReplychan}
 }
 
-func (s *Supervisor) updateConfiguration(replyChan chan<- []program.RequestReply) error {
+func (s *Supervisor) UpdateRequest(replyChan chan<- []program.RequestReply) {
 	newConfig, err := config.NewConfig(s.config.Path)
 	if err != nil {
-		return err
+		replyChan <- []program.RequestReply{
+			{
+				ProcessName: "",
+				Err:         err,
+			},
+		}
+		return
 	}
 
-	if reflect.DeepEqual(newConfig, s.config) {
-		return nil
+	if reflect.DeepEqual(newConfig.Programs, s.config.Programs) {
+		replyChan <- []program.RequestReply{}
+		return
 	}
 
 	var stoppedManagers []*program.ProgramManager
-
 	for programName, pm := range s.programManagers {
 		programConfig, ok := newConfig.Programs[programName]
 		if !ok || !reflect.DeepEqual(&programConfig, pm.Config) {
 			pm.Stop()
 			stoppedManagers = append(stoppedManagers, pm)
-			delete(s.programManagers, programName)
 		}
 	}
 
+	var replies []program.RequestReply
 	for _, pm := range stoppedManagers {
-		<-pm.DoneChan
+		pm.Wait()
+
+		replies = append(replies, program.RequestReply{
+			ProcessName: pm.Name,
+			Message:     "stopped",
+		})
+
+		delete(s.programManagers, pm.Name)
+
+		replies = append(replies, program.RequestReply{
+			ProcessName: pm.Name,
+			Message:     "removed process group",
+		})
+
 	}
 
 	for programName, programConfig := range newConfig.Programs {
-		if _, exists := s.programManagers[programName]; !exists {
+		if _, ok := s.programManagers[programName]; !ok {
 			s.programManagers[programName] = program.NewProgramManager(programName, &programConfig, s.config.Taskmasterd.ChildLogDir, s.log)
 
 			s.wg.Add(1)
@@ -164,23 +183,15 @@ func (s *Supervisor) updateConfiguration(replyChan chan<- []program.RequestReply
 
 				pm.Run()
 			}(s.programManagers[programName])
+
+			replies = append(replies, program.RequestReply{
+				ProcessName: programName,
+				// TODO: diff between added and updated
+				Message: "added process group",
+			})
 		}
 	}
 
 	s.config = newConfig
-	replyChan <- []program.RequestReply{}
-
-	return nil
-}
-
-func (s *Supervisor) UpdateRequest(replyChan chan<- []program.RequestReply) {
-	if err := s.updateConfiguration(replyChan); err != nil {
-		replyChan <- []program.RequestReply{
-			{
-				ProcessName: "config_update",
-				Err:         err,
-			},
-		}
-		return
-	}
+	replyChan <- replies
 }

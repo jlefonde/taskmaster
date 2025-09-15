@@ -224,6 +224,8 @@ func updateAction(ctl *Controller, lineFields []string) error {
 	replyChan := make(chan []program.RequestReply, 1)
 	ctl.supervisor.UpdateRequest(replyChan)
 
+	processReplies(replyChan)
+
 	return nil
 }
 
