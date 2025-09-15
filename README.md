@@ -116,8 +116,8 @@ programs:
 | `startsecs` | int | 1 | Time process must stay running to be considered started |
 | `stopsignal` | string | `TERM` | Signal to send when stopping process |
 | `stopsecs` | int | 10 | Time to wait before sending SIGKILL |
-| `stdout_logfile` | string | auto | Path for stdout logs (`auto`, `none`, or file path) |
-| `stderr_logfile` | string | auto | Path for stderr logs (`auto`, `none`, or file path) |
+| `stdout_logfile` | string | `auto` | Path for stdout logs (`auto`, `none`, or file path) |
+| `stderr_logfile` | string | `auto` | Path for stderr logs (`auto`, `none`, or file path) |
 | `env` | map | - | Environment variables for the process |
 
 ## 🖥️ Usage
@@ -146,7 +146,7 @@ sudo ./bin/taskmasterd -e critical -l syslog
 -v, --version        Show version and exit
 ```
 
-### 🎯 Interactive Commands
+### Interactive Commands
 
 Once the supervisor is running, you can use the interactive shell:
 
@@ -156,7 +156,7 @@ taskmaster> help
 │ Type 'help <action>'                                         │
 └──────────────────────────────────────────────────────────────┘
 start       stop        restart     status      
-update      quit        exit        
+update      quit        exit        shutdown
 
 # Start all processes
 taskmaster> start all
