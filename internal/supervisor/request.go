@@ -2,8 +2,10 @@ package supervisor
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
+	"taskmaster/internal/config"
 	"taskmaster/internal/program"
 )
 
@@ -125,4 +127,60 @@ func (s *Supervisor) StatusRequest(processName string, replyChan chan<- []progra
 	processReplychan := make(chan program.ProcessStatus, 1)
 	pm.GetProcessStatus(processName, processReplychan)
 	replyChan <- []program.ProcessStatus{<-processReplychan}
+}
+
+func (s *Supervisor) updateConfiguration(replyChan chan<- []program.RequestReply) error {
+	newConfig, err := config.NewConfig(s.config.Path)
+	if err != nil {
+		return err
+	}
+
+	if reflect.DeepEqual(newConfig, s.config) {
+		return nil
+	}
+
+	var stoppedManagers []*program.ProgramManager
+
+	for programName, pm := range s.programManagers {
+		programConfig, ok := newConfig.Programs[programName]
+		if !ok || !reflect.DeepEqual(&programConfig, pm.Config) {
+			pm.Stop()
+			stoppedManagers = append(stoppedManagers, pm)
+			delete(s.programManagers, programName)
+		}
+	}
+
+	for _, pm := range stoppedManagers {
+		<-pm.DoneChan
+	}
+
+	for programName, programConfig := range newConfig.Programs {
+		if _, exists := s.programManagers[programName]; !exists {
+			s.programManagers[programName] = program.NewProgramManager(programName, &programConfig, s.config.Taskmasterd.ChildLogDir, s.log)
+
+			s.wg.Add(1)
+			go func(pm *program.ProgramManager) {
+				defer s.wg.Done()
+
+				pm.Run()
+			}(s.programManagers[programName])
+		}
+	}
+
+	s.config = newConfig
+	replyChan <- []program.RequestReply{}
+
+	return nil
+}
+
+func (s *Supervisor) UpdateRequest(replyChan chan<- []program.RequestReply) {
+	if err := s.updateConfiguration(replyChan); err != nil {
+		replyChan <- []program.RequestReply{
+			{
+				ProcessName: "config_update",
+				Err:         err,
+			},
+		}
+		return
+	}
 }

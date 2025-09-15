@@ -32,4 +32,4 @@ programs:
         stopsignal: USR1
         stopsecs: 2
         env:
-            TEST: "123"
+            TEST: "12345"

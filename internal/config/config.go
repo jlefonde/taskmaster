@@ -543,21 +543,30 @@ func (config *Config) parse() error {
 	return nil
 }
 
-func NewConfig(ctx *Context) (*Config, error) {
+func NewConfig(configPath string) (*Config, error) {
 	config := Config{
-		Path: ctx.ConfigPath,
-	}
-
-	taskmasterd, err := newTaskmasterd(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse configuration flags: %w", err)
+		Path: configPath,
 	}
 
 	if err := config.parse(); err != nil {
 		return nil, fmt.Errorf("failed to parse configuration file: %w", err)
 	}
 
+	return &config, nil
+}
+
+func NewConfigWithContext(ctx *Context) (*Config, error) {
+	taskmasterd, err := newTaskmasterd(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse configuration flags: %w", err)
+	}
+
+	config, err := NewConfig(ctx.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+
 	config.overrideTaskmasterd(taskmasterd)
 
-	return &config, nil
+	return config, nil
 }

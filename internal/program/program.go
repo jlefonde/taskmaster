@@ -46,6 +46,7 @@ type ProgramManager struct {
 	Transitions *map[State]map[Event]Transition
 	StopChan    chan struct{}
 	ExitChan    chan ProcessExitInfo
+	DoneChan    chan struct{}
 	Terminating bool
 }
 
@@ -60,6 +61,7 @@ func NewProgramManager(programName string, programConfig *config.Program, childL
 		Transitions: newTransitions(),
 		StopChan:    make(chan struct{}),
 		ExitChan:    make(chan ProcessExitInfo),
+		DoneChan:    make(chan struct{}),
 		Terminating: false,
 	}
 }
@@ -401,6 +403,8 @@ func (pm *ProgramManager) checkProcessState(mp *ManagedProcess) {
 }
 
 func (pm *ProgramManager) Run() {
+	defer close(pm.DoneChan)
+
 	for processNum := range pm.Config.NumProcs {
 		processName := pm.getProcessName(processNum)
 		pm.Processes[processName] = newManagedProcess(processNum, processName, pm.ExitChan, pm.Config.StopSignal)

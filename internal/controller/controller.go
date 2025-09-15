@@ -23,6 +23,7 @@ type SupervisorInterface interface {
 	StartRequest(processName string, replyChan chan<- []program.RequestReply)
 	StopRequest(processName string, replyChan chan<- []program.RequestReply)
 	StatusRequest(processName string, replyChan chan<- []program.ProcessStatus)
+	UpdateRequest(replyChan chan<- []program.RequestReply)
 }
 
 func NewEmbeddedController(supervisor SupervisorInterface) (*Controller, error) {

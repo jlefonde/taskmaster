@@ -53,7 +53,7 @@ func init() {
 func main() {
 	flag.Parse()
 
-	config, err := config.NewConfig(&ctx)
+	config, err := config.NewConfigWithContext(&ctx)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: failed to create config:", err)
 		os.Exit(1)

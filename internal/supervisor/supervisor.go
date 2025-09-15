@@ -19,6 +19,7 @@ type Supervisor struct {
 	config          *config.Config
 	log             *logger.Logger
 	programManagers map[string]*program.ProgramManager
+	wg              sync.WaitGroup
 	ctlExited       chan struct{}
 }
 
@@ -32,6 +33,7 @@ func NewSupervisor(config *config.Config) (*Supervisor, error) {
 		config:          config,
 		log:             log,
 		programManagers: make(map[string]*program.ProgramManager),
+		wg:              sync.WaitGroup{},
 		ctlExited:       make(chan struct{}),
 	}, nil
 }
@@ -40,15 +42,15 @@ func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
 	logDir, err := os.ReadDir(childLogDir)
 	if err != nil {
 		return fmt.Errorf("read child log directory failed: %w", err)
-	} else {
-		for _, entry := range logDir {
-			if entry.IsDir() || !strings.Contains(entry.Name(), "---taskmaster") {
-				continue
-			}
+	}
 
-			if err := os.Remove(filepath.Join(childLogDir, entry.Name())); err != nil {
-				log.Warning("remove log file failed:", err)
-			}
+	for _, entry := range logDir {
+		if entry.IsDir() || !strings.Contains(entry.Name(), "---taskmaster") {
+			continue
+		}
+
+		if err := os.Remove(filepath.Join(childLogDir, entry.Name())); err != nil {
+			log.Warning("remove log file failed:", err)
 		}
 	}
 
@@ -84,13 +86,12 @@ func (s *Supervisor) Run() {
 	quitSigs := make(chan os.Signal, 1)
 	signal.Notify(quitSigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
-	var wg sync.WaitGroup
 	for programName, programConfig := range s.config.Programs {
 		s.programManagers[programName] = program.NewProgramManager(programName, &programConfig, s.config.Taskmasterd.ChildLogDir, s.log)
 
-		wg.Add(1)
+		s.wg.Add(1)
 		go func(pm *program.ProgramManager) {
-			defer wg.Done()
+			defer s.wg.Done()
 
 			pm.Run()
 		}(s.programManagers[programName])
@@ -104,7 +105,7 @@ func (s *Supervisor) Run() {
 			go pm.Stop()
 		}
 
-		wg.Wait()
+		s.wg.Wait()
 		os.Exit(1)
 	}
 
@@ -124,5 +125,5 @@ func (s *Supervisor) Run() {
 		go pm.Stop()
 	}
 
-	wg.Wait()
+	s.wg.Wait()
 }

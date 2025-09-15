@@ -217,7 +217,13 @@ func statusAction(ctl *Controller, lineFields []string) error {
 }
 
 func updateAction(ctl *Controller, lineFields []string) error {
-	fmt.Println("Updating configuration")
+	if len(lineFields) != 0 {
+		return errors.New("invalid action syntax")
+	}
+
+	replyChan := make(chan []program.RequestReply, 1)
+	ctl.supervisor.UpdateRequest(replyChan)
+
 	return nil
 }
 
