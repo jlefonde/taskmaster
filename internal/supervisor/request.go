@@ -129,69 +129,67 @@ func (s *Supervisor) StatusRequest(processName string, replyChan chan<- []progra
 	replyChan <- []program.ProcessStatus{<-processReplychan}
 }
 
-func (s *Supervisor) UpdateRequest(replyChan chan<- []program.RequestReply) {
+func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
+	defer close(replyChan)
+
 	newConfig, err := config.NewConfig(s.config.Path)
 	if err != nil {
-		replyChan <- []program.RequestReply{
-			{
-				ProcessName: "",
-				Err:         err,
-			},
+		replyChan <- program.RequestReply{
+			ProcessName: "",
+			Err:         err,
 		}
 		return
 	}
 
 	if reflect.DeepEqual(newConfig.Programs, s.config.Programs) {
-		replyChan <- []program.RequestReply{}
 		return
 	}
 
-	var stoppedManagers []*program.ProgramManager
+	processedPrograms := make(map[string]bool)
+
 	for programName, pm := range s.programManagers {
 		programConfig, ok := newConfig.Programs[programName]
-		if !ok || !reflect.DeepEqual(&programConfig, pm.Config) {
-			pm.Stop()
-			stoppedManagers = append(stoppedManagers, pm)
+		if ok && reflect.DeepEqual(&programConfig, pm.Config) {
+			processedPrograms[programName] = true
+			continue
+		}
+
+		pm.Stop()
+		pm.Wait()
+		delete(s.programManagers, pm.Name)
+
+		replyChan <- program.RequestReply{
+			ProcessName: pm.Name,
+			Message:     "stopped",
+		}
+
+		if !ok {
+			replyChan <- program.RequestReply{
+				ProcessName: pm.Name,
+				Message:     "removed process group",
+			}
+		} else {
+			s.startProgramManager(programName, &programConfig)
+
+			replyChan <- program.RequestReply{
+				ProcessName: pm.Name,
+				Message:     "updated process group",
+			}
+
+			processedPrograms[programName] = true
 		}
 	}
 
-	var replies []program.RequestReply
-	for _, pm := range stoppedManagers {
-		pm.Wait()
-
-		replies = append(replies, program.RequestReply{
-			ProcessName: pm.Name,
-			Message:     "stopped",
-		})
-
-		delete(s.programManagers, pm.Name)
-
-		replies = append(replies, program.RequestReply{
-			ProcessName: pm.Name,
-			Message:     "removed process group",
-		})
-
-	}
-
 	for programName, programConfig := range newConfig.Programs {
-		if _, ok := s.programManagers[programName]; !ok {
-			s.programManagers[programName] = program.NewProgramManager(programName, &programConfig, s.config.Taskmasterd.ChildLogDir, s.log)
+		if !processedPrograms[programName] {
+			s.startProgramManager(programName, &programConfig)
 
-			s.wg.Add(1)
-			go func(pm *program.ProgramManager) {
-				defer s.wg.Done()
-
-				pm.Run()
-			}(s.programManagers[programName])
-
-			replies = append(replies, program.RequestReply{
+			replyChan <- program.RequestReply{
 				ProcessName: programName,
-				// TODO: diff between added and updated
-				Message: "added process group",
-			})
+				Message:     "added process group",
+			}
 		}
 	}
 
 	s.config = newConfig
-	replyChan <- replies
 }

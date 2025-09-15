@@ -74,6 +74,17 @@ func (s *Supervisor) GetProcessNames() func(string) []string {
 	}
 }
 
+func (s *Supervisor) startProgramManager(programName string, programConfig *config.Program) {
+	s.programManagers[programName] = program.NewProgramManager(programName, programConfig, s.config.Taskmasterd.ChildLogDir, s.log)
+
+	s.wg.Add(1)
+	go func(pm *program.ProgramManager) {
+		defer s.wg.Done()
+
+		pm.Run()
+	}(s.programManagers[programName])
+}
+
 func (s *Supervisor) Run() {
 	s.log.Info("taskmasterd started with pid ", os.Getpid())
 
@@ -87,14 +98,7 @@ func (s *Supervisor) Run() {
 	signal.Notify(quitSigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 	for programName, programConfig := range s.config.Programs {
-		s.programManagers[programName] = program.NewProgramManager(programName, &programConfig, s.config.Taskmasterd.ChildLogDir, s.log)
-
-		s.wg.Add(1)
-		go func(pm *program.ProgramManager) {
-			defer s.wg.Done()
-
-			pm.Run()
-		}(s.programManagers[programName])
+		s.startProgramManager(programName, &programConfig)
 	}
 
 	ctl, err := controller.NewEmbeddedController(s)

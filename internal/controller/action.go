@@ -121,7 +121,7 @@ func displayRequestResults(replies []program.RequestReply) {
 	for _, reply := range replies {
 		if reply.Err != nil {
 			fmt.Fprintf(os.Stderr, "%s: ERROR (%v)\n", reply.ProcessName, reply.Err)
-		} else {
+		} else if reply.Message != "" {
 			fmt.Printf("%s: %s\n", reply.ProcessName, reply.Message)
 		}
 	}
@@ -221,10 +221,16 @@ func updateAction(ctl *Controller, lineFields []string) error {
 		return errors.New("invalid action syntax")
 	}
 
-	replyChan := make(chan []program.RequestReply, 1)
-	ctl.supervisor.UpdateRequest(replyChan)
+	replyChan := make(chan program.RequestReply)
+	go ctl.supervisor.UpdateRequest(replyChan)
 
-	processReplies(replyChan)
+	for reply := range replyChan {
+		if reply.Err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", reply.Err)
+		} else if reply.Message != "" {
+			fmt.Printf("%s: %s\n", reply.ProcessName, reply.Message)
+		}
+	}
 
 	return nil
 }
