@@ -191,5 +191,5 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 		}
 	}
 
-	s.config = newConfig
+	s.config.Programs = newConfig.Programs
 }
