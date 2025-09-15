@@ -130,7 +130,11 @@ func (s *Supervisor) StatusRequest(processName string, replyChan chan<- []progra
 }
 
 func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
+	s.configMutex.Lock()
+	defer s.configMutex.Unlock()
 	defer close(replyChan)
+
+	s.log.Info("updating config")
 
 	newConfig, err := config.NewConfig(s.config.Path)
 	if err != nil {
@@ -138,6 +142,7 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 			ProcessName: "",
 			Err:         err,
 		}
+		s.log.Errorf("failed to update config: %v", err)
 		return
 	}
 
@@ -168,6 +173,8 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 				ProcessName: pm.Name,
 				Message:     "removed process group",
 			}
+
+			s.log.Info("removed: ", pm.Name)
 		} else {
 			s.startProgramManager(programName, &programConfig)
 
@@ -175,6 +182,8 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 				ProcessName: pm.Name,
 				Message:     "updated process group",
 			}
+
+			s.log.Info("updated: ", pm.Name)
 
 			processedPrograms[programName] = true
 		}
@@ -188,8 +197,11 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 				ProcessName: programName,
 				Message:     "added process group",
 			}
+
+			s.log.Info("added: ", programName)
 		}
 	}
 
 	s.config.Programs = newConfig.Programs
+	s.log.Info("config successfully updated")
 }

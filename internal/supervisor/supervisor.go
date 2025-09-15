@@ -21,6 +21,7 @@ type Supervisor struct {
 	programManagers map[string]*program.ProgramManager
 	wg              sync.WaitGroup
 	ctlExited       chan struct{}
+	configMutex     sync.Mutex
 }
 
 func NewSupervisor(config *config.Config) (*Supervisor, error) {
@@ -85,6 +86,17 @@ func (s *Supervisor) startProgramManager(programName string, programConfig *conf
 	}(s.programManagers[programName])
 }
 
+func (s *Supervisor) updateConfig() {
+	replyChan := make(chan program.RequestReply)
+
+	go func() {
+		s.UpdateRequest(replyChan)
+	}()
+
+	for range replyChan {
+	}
+}
+
 func (s *Supervisor) Run() {
 	s.log.Info("taskmasterd started with pid ", os.Getpid())
 
@@ -95,7 +107,9 @@ func (s *Supervisor) Run() {
 	}
 
 	quitSigs := make(chan os.Signal, 1)
+	updateSigs := make(chan os.Signal, 1)
 	signal.Notify(quitSigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	signal.Notify(updateSigs, syscall.SIGHUP)
 
 	for programName, programConfig := range s.config.Programs {
 		s.startProgramManager(programName, &programConfig)
@@ -118,13 +132,20 @@ func (s *Supervisor) Run() {
 		close(s.ctlExited)
 	}()
 
-	select {
-	case <-s.ctlExited:
-		s.log.Info("controller exited, shutting down supervisor")
-	case sig := <-quitSigs:
-		s.log.Infof("received signal: %s, shutting down supervisor", sig)
+	for {
+		select {
+		case <-updateSigs:
+			s.updateConfig()
+		case <-s.ctlExited:
+			s.log.Info("controller exited, shutting down supervisor")
+			goto shutdown
+		case sig := <-quitSigs:
+			s.log.Infof("received signal: %s, shutting down supervisor", sig)
+			goto shutdown
+		}
 	}
 
+shutdown:
 	for _, pm := range s.programManagers {
 		go pm.Stop()
 	}
