@@ -142,11 +142,13 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 			ProcessName: "",
 			Err:         err,
 		}
+
 		s.log.Errorf("failed to update config: %v", err)
 		return
 	}
 
 	if reflect.DeepEqual(newConfig.Programs, s.config.Programs) {
+		s.log.Info("no configuration changes detected, skipping config update")
 		return
 	}
 
