@@ -304,7 +304,7 @@ func statusHelper() {
 }
 
 func updateHelper() {
-	fmt.Println("update\t\t\tReload configuration and update processes")
+	fmt.Println("update\t\t\tReload configuration file and apply changes")
 }
 
 func quitHelper() {

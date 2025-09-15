@@ -216,7 +216,7 @@ func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
 }
 
 func (pm *ProgramManager) restartProcess(mp *ManagedProcess) Event {
-	if mp.RestartCount > pm.Config.StartRetries {
+	if mp.RestartCount >= pm.Config.StartRetries {
 		return TIMEOUT
 	}
 
