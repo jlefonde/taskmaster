@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"taskmaster/internal/config"
-	"taskmaster/internal/supervisor"
+	"github.com/jlefonde/taskmaster/internal/config"
+	"github.com/jlefonde/taskmaster/internal/supervisor"
 )
 
 var ctx config.Context

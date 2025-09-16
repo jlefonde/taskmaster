@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"taskmaster/internal/config"
-	"taskmaster/internal/logger"
+	"github.com/jlefonde/taskmaster/internal/config"
+	"github.com/jlefonde/taskmaster/internal/logger"
 )
 
 type State string

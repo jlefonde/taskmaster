@@ -9,19 +9,22 @@ import (
 	"sync"
 	"syscall"
 
-	"taskmaster/internal/config"
-	"taskmaster/internal/controller"
-	"taskmaster/internal/logger"
-	"taskmaster/internal/program"
+	"github.com/jlefonde/taskmaster/internal/config"
+	"github.com/jlefonde/taskmaster/internal/controller"
+	"github.com/jlefonde/taskmaster/internal/logger"
+	"github.com/jlefonde/taskmaster/internal/program"
 )
 
 type Supervisor struct {
 	config          *config.Config
 	log             *logger.Logger
 	programManagers map[string]*program.ProgramManager
-	wg              sync.WaitGroup
+	quitSigs        chan os.Signal
+	updateSigs      chan os.Signal
 	ctlExited       chan struct{}
-	configMutex     sync.Mutex
+	wg              sync.WaitGroup
+	mu              sync.Mutex
+	updateMutex     sync.Mutex
 }
 
 func NewSupervisor(config *config.Config) (*Supervisor, error) {
@@ -37,6 +40,35 @@ func NewSupervisor(config *config.Config) (*Supervisor, error) {
 		wg:              sync.WaitGroup{},
 		ctlExited:       make(chan struct{}),
 	}, nil
+}
+
+func (s *Supervisor) getProgramManagers() map[string]*program.ProgramManager {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.programManagers
+}
+
+func (s *Supervisor) getProgramManager(programName string) (*program.ProgramManager, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pm, ok := s.programManagers[programName]
+	return pm, ok
+}
+
+func (s *Supervisor) setProgramManager(programName string, pm *program.ProgramManager) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.programManagers[programName] = pm
+}
+
+func (s *Supervisor) deleteProgramManager(programName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.programManagers, programName)
 }
 
 func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
@@ -61,7 +93,7 @@ func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
 func (s *Supervisor) GetProcessNames() func(string) []string {
 	return func(string) []string {
 		var processNames []string
-		for programName, pm := range s.programManagers {
+		for programName, pm := range s.getProgramManagers() {
 			for processName := range pm.Processes {
 				processNames = append(processNames, processName)
 			}
@@ -76,14 +108,15 @@ func (s *Supervisor) GetProcessNames() func(string) []string {
 }
 
 func (s *Supervisor) startProgramManager(programName string, programConfig *config.Program) {
-	s.programManagers[programName] = program.NewProgramManager(programName, programConfig, s.config.Taskmasterd.ChildLogDir, s.log)
+	pm := program.NewProgramManager(programName, programConfig, s.config.Taskmasterd.ChildLogDir, s.log)
+	s.setProgramManager(programName, pm)
 
 	s.wg.Add(1)
 	go func(pm *program.ProgramManager) {
 		defer s.wg.Done()
 
 		pm.Run()
-	}(s.programManagers[programName])
+	}(pm)
 }
 
 func (s *Supervisor) updateConfig() {
@@ -97,6 +130,30 @@ func (s *Supervisor) updateConfig() {
 	}
 }
 
+func (s *Supervisor) Wait() {
+	for {
+		select {
+		case sig := <-s.updateSigs:
+			s.log.Infof("received signal: %s, updating config", sig)
+			s.updateConfig()
+		case <-s.ctlExited:
+			s.log.Info("controller exited, shutting down supervisor")
+			return
+		case sig := <-s.quitSigs:
+			s.log.Infof("received signal: %s, shutting down supervisor", sig)
+			return
+		}
+	}
+}
+
+func (s *Supervisor) Stop() {
+	for _, pm := range s.getProgramManagers() {
+		go pm.Stop()
+	}
+
+	s.wg.Wait()
+}
+
 func (s *Supervisor) Run() {
 	s.log.Info("taskmasterd started with pid ", os.Getpid())
 
@@ -106,10 +163,10 @@ func (s *Supervisor) Run() {
 		}
 	}
 
-	quitSigs := make(chan os.Signal, 1)
-	updateSigs := make(chan os.Signal, 1)
-	signal.Notify(quitSigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	signal.Notify(updateSigs, syscall.SIGHUP)
+	s.quitSigs = make(chan os.Signal, 1)
+	s.updateSigs = make(chan os.Signal, 1)
+	signal.Notify(s.quitSigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	signal.Notify(s.updateSigs, syscall.SIGHUP)
 
 	for programName, programConfig := range s.config.Programs {
 		s.startProgramManager(programName, &programConfig)
@@ -119,36 +176,16 @@ func (s *Supervisor) Run() {
 	if err != nil {
 		s.log.Critical("failed to create controller: ", err)
 
-		for _, pm := range s.programManagers {
-			go pm.Stop()
-		}
-
-		s.wg.Wait()
+		s.Stop()
 		os.Exit(1)
 	}
 
 	go func() {
+		defer close(s.ctlExited)
+
 		ctl.Start()
-		close(s.ctlExited)
 	}()
 
-	for {
-		select {
-		case <-updateSigs:
-			s.updateConfig()
-		case <-s.ctlExited:
-			s.log.Info("controller exited, shutting down supervisor")
-			goto shutdown
-		case sig := <-quitSigs:
-			s.log.Infof("received signal: %s, shutting down supervisor", sig)
-			goto shutdown
-		}
-	}
-
-shutdown:
-	for _, pm := range s.programManagers {
-		go pm.Stop()
-	}
-
-	s.wg.Wait()
+	s.Wait()
+	s.Stop()
 }

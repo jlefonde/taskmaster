@@ -1,4 +1,4 @@
-module taskmaster
+module github.com/jlefonde/taskmaster
 
 go 1.25.0
 

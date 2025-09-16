@@ -10,7 +10,8 @@ import (
 	"reflect"
 	"strings"
 	"syscall"
-	"taskmaster/internal/logger"
+
+	"github.com/jlefonde/taskmaster/internal/logger"
 
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"

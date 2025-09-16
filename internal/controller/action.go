@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"taskmaster/internal/program"
+	"github.com/jlefonde/taskmaster/internal/program"
 
 	"github.com/chzyer/readline"
 )

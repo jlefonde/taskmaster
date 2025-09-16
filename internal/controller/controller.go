@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"taskmaster/internal/logger"
-	"taskmaster/internal/program"
+	"github.com/jlefonde/taskmaster/internal/logger"
+	"github.com/jlefonde/taskmaster/internal/program"
 
 	"github.com/chzyer/readline"
 )

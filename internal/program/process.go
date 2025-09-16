@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"taskmaster/internal/config"
+	"github.com/jlefonde/taskmaster/internal/config"
 )
 
 type ProcessExitInfo struct {

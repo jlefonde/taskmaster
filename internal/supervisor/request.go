@@ -7,14 +7,14 @@ import (
 	"strconv"
 	"strings"
 
-	"taskmaster/internal/config"
-	"taskmaster/internal/program"
+	"github.com/jlefonde/taskmaster/internal/config"
+	"github.com/jlefonde/taskmaster/internal/program"
 )
 
 func (s *Supervisor) startAllPrograms(replyChan chan<- []program.RequestReply) {
 	var replies []program.RequestReply
 
-	for _, pm := range s.programManagers {
+	for _, pm := range s.getProgramManagers() {
 		programReplies := make(chan []program.RequestReply, 1)
 		pm.StartAllProcesses(programReplies)
 		replies = append(replies, <-programReplies...)
@@ -30,7 +30,7 @@ func (s *Supervisor) StartRequest(processName string, replyChan chan<- []program
 	}
 
 	programName, processNameCut, sepFound := strings.Cut(processName, ":")
-	pm, ok := s.programManagers[programName]
+	pm, ok := s.getProgramManager(programName)
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
 		replyChan <- []program.RequestReply{
 			{
@@ -54,7 +54,7 @@ func (s *Supervisor) StartRequest(processName string, replyChan chan<- []program
 func (s *Supervisor) stopAllPrograms(replyChan chan<- []program.RequestReply) {
 	var replies []program.RequestReply
 
-	for _, pm := range s.programManagers {
+	for _, pm := range s.getProgramManagers() {
 		programReplies := make(chan []program.RequestReply, 1)
 		pm.StopAllProcesses(programReplies)
 		replies = append(replies, <-programReplies...)
@@ -70,7 +70,7 @@ func (s *Supervisor) StopRequest(processName string, replyChan chan<- []program.
 	}
 
 	programName, processNameCut, sepFound := strings.Cut(processName, ":")
-	pm, ok := s.programManagers[programName]
+	pm, ok := s.getProgramManager(programName)
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
 		replyChan <- []program.RequestReply{
 			{
@@ -94,7 +94,7 @@ func (s *Supervisor) StopRequest(processName string, replyChan chan<- []program.
 func (s *Supervisor) getAllProgramsProcessPids(replyChan chan<- []program.RequestReply) {
 	var replies []program.RequestReply
 
-	for _, pm := range s.programManagers {
+	for _, pm := range s.getProgramManagers() {
 		programReplies := make(chan []program.RequestReply, 1)
 		pm.GetAllProcessPIDs(programReplies)
 		replies = append(replies, <-programReplies...)
@@ -117,7 +117,7 @@ func (s *Supervisor) PidRequest(processName string, replyChan chan<- []program.R
 	}
 
 	programName, processNameCut, sepFound := strings.Cut(processName, ":")
-	pm, ok := s.programManagers[programName]
+	pm, ok := s.getProgramManager(programName)
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
 		replyChan <- []program.RequestReply{
 			{
@@ -141,7 +141,7 @@ func (s *Supervisor) PidRequest(processName string, replyChan chan<- []program.R
 func (s *Supervisor) getAllProgramsStatus(replyChan chan<- []program.ProcessStatus) {
 	var replies []program.ProcessStatus
 
-	for _, pm := range s.programManagers {
+	for _, pm := range s.getProgramManagers() {
 		programReplies := make(chan []program.ProcessStatus, 1)
 		pm.GetAllProcessesStatus(programReplies)
 		replies = append(replies, <-programReplies...)
@@ -157,7 +157,7 @@ func (s *Supervisor) StatusRequest(processName string, replyChan chan<- []progra
 	}
 
 	programName, processNameCut, sepFound := strings.Cut(processName, ":")
-	pm, ok := s.programManagers[programName]
+	pm, ok := s.getProgramManager(programName)
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
 		replyChan <- []program.ProcessStatus{
 			{
@@ -178,12 +178,41 @@ func (s *Supervisor) StatusRequest(processName string, replyChan chan<- []progra
 	replyChan <- []program.ProcessStatus{<-processReplychan}
 }
 
-func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
-	s.configMutex.Lock()
-	defer s.configMutex.Unlock()
-	defer close(replyChan)
+func (s *Supervisor) removeProcessGroup(programName string, replyChan chan<- program.RequestReply) {
+	replyChan <- program.RequestReply{
+		Name:    programName,
+		Message: "removed process group",
+	}
 
-	s.log.Info("updating config")
+	s.log.Info("removed: ", programName)
+}
+
+func (s *Supervisor) updateProcessGroup(programName string, programConfig *config.Program, replyChan chan<- program.RequestReply) {
+	s.startProgramManager(programName, programConfig)
+
+	replyChan <- program.RequestReply{
+		Name:    programName,
+		Message: "updated process group",
+	}
+
+	s.log.Info("updated: ", programName)
+}
+
+func (s *Supervisor) addProcessGroup(programName string, programConfig *config.Program, replyChan chan<- program.RequestReply) {
+	s.startProgramManager(programName, programConfig)
+
+	replyChan <- program.RequestReply{
+		Name:    programName,
+		Message: "added process group",
+	}
+
+	s.log.Info("added: ", programName)
+}
+
+func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
+	s.updateMutex.Lock()
+	defer s.updateMutex.Unlock()
+	defer close(replyChan)
 
 	newConfig, err := config.NewConfig(s.config.Path)
 	if err != nil {
@@ -203,7 +232,7 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 
 	processedPrograms := make(map[string]bool)
 
-	for programName, pm := range s.programManagers {
+	for programName, pm := range s.getProgramManagers() {
 		programConfig, ok := newConfig.Programs[programName]
 		if ok && reflect.DeepEqual(&programConfig, pm.Config) {
 			processedPrograms[programName] = true
@@ -212,44 +241,24 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 
 		pm.Stop()
 		pm.Wait()
-		delete(s.programManagers, pm.Name)
+		s.deleteProgramManager(programName)
 
 		replyChan <- program.RequestReply{
-			Name:    pm.Name,
+			Name:    programName,
 			Message: "stopped",
 		}
 
 		if !ok {
-			replyChan <- program.RequestReply{
-				Name:    pm.Name,
-				Message: "removed process group",
-			}
-
-			s.log.Info("removed: ", pm.Name)
+			s.removeProcessGroup(programName, replyChan)
 		} else {
-			s.startProgramManager(programName, &programConfig)
-
-			replyChan <- program.RequestReply{
-				Name:    pm.Name,
-				Message: "updated process group",
-			}
-
-			s.log.Info("updated: ", pm.Name)
-
+			s.updateProcessGroup(programName, &programConfig, replyChan)
 			processedPrograms[programName] = true
 		}
 	}
 
 	for programName, programConfig := range newConfig.Programs {
 		if !processedPrograms[programName] {
-			s.startProgramManager(programName, &programConfig)
-
-			replyChan <- program.RequestReply{
-				Name:    programName,
-				Message: "added process group",
-			}
-
-			s.log.Info("added: ", programName)
+			s.addProcessGroup(programName, &programConfig, replyChan)
 		}
 	}
 
