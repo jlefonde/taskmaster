@@ -14,7 +14,7 @@ import (
 func (s *Supervisor) startAllPrograms(replyChan chan<- []program.RequestReply) {
 	var replies []program.RequestReply
 
-	for _, pm := range s.getProgramManagers() {
+	for _, pm := range s.ProgramManagers() {
 		programReplies := make(chan []program.RequestReply, 1)
 		pm.StartAllProcesses(programReplies)
 		replies = append(replies, <-programReplies...)
@@ -54,7 +54,7 @@ func (s *Supervisor) StartRequest(processName string, replyChan chan<- []program
 func (s *Supervisor) stopAllPrograms(replyChan chan<- []program.RequestReply) {
 	var replies []program.RequestReply
 
-	for _, pm := range s.getProgramManagers() {
+	for _, pm := range s.ProgramManagers() {
 		programReplies := make(chan []program.RequestReply, 1)
 		pm.StopAllProcesses(programReplies)
 		replies = append(replies, <-programReplies...)
@@ -94,7 +94,7 @@ func (s *Supervisor) StopRequest(processName string, replyChan chan<- []program.
 func (s *Supervisor) getAllProgramsProcessPids(replyChan chan<- []program.RequestReply) {
 	var replies []program.RequestReply
 
-	for _, pm := range s.getProgramManagers() {
+	for _, pm := range s.ProgramManagers() {
 		programReplies := make(chan []program.RequestReply, 1)
 		pm.GetAllProcessPIDs(programReplies)
 		replies = append(replies, <-programReplies...)
@@ -141,7 +141,7 @@ func (s *Supervisor) PidRequest(processName string, replyChan chan<- []program.R
 func (s *Supervisor) getAllProgramsStatus(replyChan chan<- []program.ProcessStatus) {
 	var replies []program.ProcessStatus
 
-	for _, pm := range s.getProgramManagers() {
+	for _, pm := range s.ProgramManagers() {
 		programReplies := make(chan []program.ProcessStatus, 1)
 		pm.GetAllProcessesStatus(programReplies)
 		replies = append(replies, <-programReplies...)
@@ -232,7 +232,7 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 
 	processedPrograms := make(map[string]bool)
 
-	for programName, pm := range s.getProgramManagers() {
+	for programName, pm := range s.ProgramManagers() {
 		programConfig, ok := newConfig.Programs[programName]
 		if ok && reflect.DeepEqual(&programConfig, pm.Config) {
 			processedPrograms[programName] = true

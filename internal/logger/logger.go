@@ -22,6 +22,7 @@ const (
 )
 
 type Logger struct {
+	logFile   *os.File
 	logger    *log.Logger
 	level     syslog.Priority
 	logLevels []string
@@ -44,6 +45,7 @@ func NewLogger(logFilePath string, logLevel syslog.Priority) (*Logger, error) {
 		}
 
 		return &Logger{
+			logFile:   logFile,
 			logger:    log.New(logFile, "taskmasterd: ", log.Lmsgprefix|log.Ldate|log.Ltime),
 			level:     logLevel,
 			logLevels: logLevels,
@@ -60,6 +62,18 @@ func NewLogger(logFilePath string, logLevel syslog.Priority) (*Logger, error) {
 		logLevels: logLevels,
 		syslog:    syslog,
 	}, nil
+}
+
+func (l *Logger) CloseLogFile() error {
+	if l.logFile != nil {
+		return l.logFile.Close()
+	}
+
+	if l.syslog != nil {
+		return l.syslog.Close()
+	}
+
+	return nil
 }
 
 func (l *Logger) Criticalf(format string, v ...any) {

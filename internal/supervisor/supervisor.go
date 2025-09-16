@@ -42,7 +42,7 @@ func NewSupervisor(config *config.Config) (*Supervisor, error) {
 	}, nil
 }
 
-func (s *Supervisor) getProgramManagers() map[string]*program.ProgramManager {
+func (s *Supervisor) ProgramManagers() map[string]*program.ProgramManager {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -83,7 +83,7 @@ func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
 		}
 
 		if err := os.Remove(filepath.Join(childLogDir, entry.Name())); err != nil {
-			log.Warning("remove log file failed:", err)
+			log.Warning("remove log file failed: ", err)
 		}
 	}
 
@@ -93,7 +93,7 @@ func cleanupLogFiles(log *logger.Logger, childLogDir string) error {
 func (s *Supervisor) GetProcessNames() func(string) []string {
 	return func(string) []string {
 		var processNames []string
-		for programName, pm := range s.getProgramManagers() {
+		for programName, pm := range s.ProgramManagers() {
 			for processName := range pm.Processes {
 				processNames = append(processNames, processName)
 			}
@@ -147,11 +147,15 @@ func (s *Supervisor) Wait() {
 }
 
 func (s *Supervisor) Stop() {
-	for _, pm := range s.getProgramManagers() {
+	for _, pm := range s.ProgramManagers() {
 		go pm.Stop()
 	}
 
 	s.wg.Wait()
+
+	if err := s.log.CloseLogFile(); err != nil {
+		s.log.Warning("failed to close log file: ", err)
+	}
 }
 
 func (s *Supervisor) Run() {
@@ -159,7 +163,7 @@ func (s *Supervisor) Run() {
 
 	if !s.config.Taskmasterd.NoCleanup {
 		if err := cleanupLogFiles(s.log, s.config.Taskmasterd.ChildLogDir); err != nil {
-			s.log.Warning("couldn't cleanup log files:", err)
+			s.log.Warning("couldn't cleanup log files: ", err)
 		}
 	}
 
