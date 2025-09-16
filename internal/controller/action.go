@@ -6,6 +6,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"taskmaster/internal/program"
 
@@ -163,14 +164,43 @@ func executeProcessAction(lineFields []string, actionFunc func(string, chan<- []
 }
 
 func startAction(ctl *Controller, lineFields []string) error {
-	return executeProcessAction(lineFields, ctl.supervisor.StartRequest, 1)
+	fields := strings.Join(lineFields, " ")
+	ctl.log.Info("requested: start ", fields)
+	startTime := time.Now()
+	err := executeProcessAction(lineFields, ctl.supervisor.StartRequest, 1)
+	if err == nil {
+		elapsedTime := time.Since(startTime).Seconds()
+		if elapsedTime < 0.1 {
+			ctl.log.Infof("completed: start %s", fields)
+		} else {
+			ctl.log.Infof("completed: (%.3fs) start %s", elapsedTime, fields)
+		}
+	}
+
+	return err
 }
 
 func stopAction(ctl *Controller, lineFields []string) error {
-	return executeProcessAction(lineFields, ctl.supervisor.StopRequest, 1)
+	fields := strings.Join(lineFields, " ")
+	ctl.log.Info("requested: stop ", fields)
+	startTime := time.Now()
+	err := executeProcessAction(lineFields, ctl.supervisor.StopRequest, 1)
+	if err == nil {
+		elapsedTime := time.Since(startTime).Seconds()
+		if elapsedTime < 0.1 {
+			ctl.log.Infof("completed: stop %s", fields)
+		} else {
+			ctl.log.Infof("completed: (%.3fs) stop %s", elapsedTime, fields)
+		}
+	}
+
+	return err
 }
 
 func restartAction(ctl *Controller, lineFields []string) error {
+	fields := strings.Join(lineFields, " ")
+	ctl.log.Info("requested: restart ", fields)
+	startTime := time.Now()
 	if err := stopAction(ctl, lineFields); err != nil {
 		return err
 	}
@@ -179,10 +209,20 @@ func restartAction(ctl *Controller, lineFields []string) error {
 		return err
 	}
 
+	elapsedTime := time.Since(startTime).Seconds()
+	if elapsedTime < 0.1 {
+		ctl.log.Infof("completed: restart %s", fields)
+	} else {
+		ctl.log.Infof("completed: (%.3fs) restart %s", elapsedTime, fields)
+	}
+
 	return nil
 }
 
 func statusAction(ctl *Controller, lineFields []string) error {
+	fields := strings.Join(lineFields, " ")
+	ctl.log.Info("requested: status ", fields)
+	startTime := time.Now()
 	if len(lineFields) == 0 {
 		return errors.New("invalid action syntax")
 	}
@@ -219,14 +259,36 @@ func statusAction(ctl *Controller, lineFields []string) error {
 		}
 	}
 
+	elapsedTime := time.Since(startTime).Seconds()
+	if elapsedTime < 0.1 {
+		ctl.log.Infof("completed: status %s", fields)
+	} else {
+		ctl.log.Infof("completed: (%.3fs) status %s", elapsedTime, fields)
+	}
+
 	return nil
 }
 
 func pidAction(ctl *Controller, lineFields []string) error {
-	return executeProcessAction(lineFields, ctl.supervisor.PidRequest, 0)
+	fields := strings.Join(lineFields, " ")
+	ctl.log.Info("requested: pid ", fields)
+	startTime := time.Now()
+	err := executeProcessAction(lineFields, ctl.supervisor.PidRequest, 0)
+	if err == nil {
+		elapsedTime := time.Since(startTime).Seconds()
+		if elapsedTime < 0.1 {
+			ctl.log.Infof("completed: pid %s", fields)
+		} else {
+			ctl.log.Infof("completed: (%.3fs) pid %s", elapsedTime, fields)
+		}
+	}
+
+	return err
 }
 
 func updateAction(ctl *Controller, lineFields []string) error {
+	ctl.log.Info("requested: update")
+	startTime := time.Now()
 	if len(lineFields) != 0 {
 		return errors.New("invalid action syntax")
 	}
@@ -242,15 +304,34 @@ func updateAction(ctl *Controller, lineFields []string) error {
 		}
 	}
 
+	elapsedTime := time.Since(startTime).Seconds()
+	if elapsedTime < 0.1 {
+		ctl.log.Infof("completed: update")
+	} else {
+		ctl.log.Infof("completed: (%.3fs) update", elapsedTime)
+	}
+
 	return nil
 }
 
 func shutdownAction(ctl *Controller, lineFields []string) error {
+	ctl.log.Info("requested: shutdown")
+	startTime := time.Now()
 	ctl.running = false
+	elapsedTime := time.Since(startTime).Seconds()
+	if elapsedTime < 0.1 {
+		ctl.log.Infof("completed: shutdown")
+	} else {
+		ctl.log.Infof("completed: (%.3fs) shutdown", elapsedTime)
+	}
+
 	return nil
 }
 
 func helpAction(ctl *Controller, lineFields []string) error {
+	fields := strings.Join(lineFields, " ")
+	ctl.log.Info("requested: help ", fields)
+	startTime := time.Now()
 	if len(lineFields) == 0 {
 		fmt.Println("┌────────────────────── Available Actions ─────────────────────┐")
 		fmt.Println("│ Type 'help <action>'                                         │")
@@ -286,6 +367,13 @@ func helpAction(ctl *Controller, lineFields []string) error {
 		fmt.Fprintln(os.Stderr, "*** invalid help syntax. Use: help <action>")
 	}
 
+	elapsedTime := time.Since(startTime).Seconds()
+	if elapsedTime < 0.1 {
+		ctl.log.Infof("completed: help %s", fields)
+	} else {
+		ctl.log.Infof("completed: (%.3fs) help %s", elapsedTime, fields)
+	}
+
 	return nil
 }
 
@@ -314,10 +402,10 @@ func statusHelper() {
 }
 
 func pidHelper() {
-	fmt.Println("pid \t\t\tGet the PID of taskmasterd")
-	fmt.Println("pid all\t\tGet the PID of all processes")
-	fmt.Println("pid <name>\t\tGet the PID of a process")
-	fmt.Println("pid <name> <name>\tGet the PID of multiple processes")
+	fmt.Println("pid \t\t\tGet PID of taskmasterd")
+	fmt.Println("pid all\t\t\tGet PID of all processes")
+	fmt.Println("pid <name>\t\tGet PID of a process")
+	fmt.Println("pid <name> <name>\tGet PID of multiple processes")
 }
 
 func updateHelper() {

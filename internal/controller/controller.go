@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"taskmaster/internal/logger"
 	"taskmaster/internal/program"
 
 	"github.com/chzyer/readline"
@@ -13,6 +14,7 @@ import (
 
 type Controller struct {
 	supervisor SupervisorInterface
+	log        *logger.Logger
 	rl         *readline.Instance
 	actions    map[Action]*actionMetadata
 	running    bool
@@ -27,7 +29,7 @@ type SupervisorInterface interface {
 	UpdateRequest(replyChan chan<- program.RequestReply)
 }
 
-func NewEmbeddedController(supervisor SupervisorInterface) (*Controller, error) {
+func NewEmbeddedController(supervisor SupervisorInterface, log *logger.Logger) (*Controller, error) {
 	actions := newActions(supervisor)
 
 	rl, err := readline.NewEx(&readline.Config{
@@ -44,6 +46,7 @@ func NewEmbeddedController(supervisor SupervisorInterface) (*Controller, error) 
 
 	return &Controller{
 		supervisor: supervisor,
+		log:        log,
 		rl:         rl,
 		actions:    actions,
 		running:    true,

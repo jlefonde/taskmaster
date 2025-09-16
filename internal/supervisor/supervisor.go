@@ -115,7 +115,7 @@ func (s *Supervisor) Run() {
 		s.startProgramManager(programName, &programConfig)
 	}
 
-	ctl, err := controller.NewEmbeddedController(s)
+	ctl, err := controller.NewEmbeddedController(s, s.log)
 	if err != nil {
 		s.log.Critical("failed to create controller: ", err)
 
