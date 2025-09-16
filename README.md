@@ -7,6 +7,8 @@ Unlike traditional supervisor systems that separate the daemon and client, Taskm
 
 ## ✨ Features
 
+This project is part of the **42 School** curriculum, specifically the **taskmaster** project. The goal is to recreate a process supervisor similar to supervisord, demonstrating understanding of:
+
 - **Process Management**: Start, stop, restart, and monitor multiple processes
 - **Automatic Restart**: Configurable restart policies (never, always, on-failure)
 - **Interactive Shell**: Built-in command-line interface with tab completion

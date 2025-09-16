@@ -170,7 +170,7 @@ func startAction(ctl *Controller, lineFields []string) error {
 	err := executeProcessAction(lineFields, ctl.supervisor.StartRequest, 1)
 	if err == nil {
 		elapsedTime := time.Since(startTime).Seconds()
-		if elapsedTime < 0.1 {
+		if elapsedTime < 0.05 {
 			ctl.log.Infof("completed: start %s", fields)
 		} else {
 			ctl.log.Infof("completed: (%.3fs) start %s", elapsedTime, fields)
