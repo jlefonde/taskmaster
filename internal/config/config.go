@@ -18,7 +18,6 @@ import (
 
 type Context struct {
 	ConfigPath  string
-	NoDaemon    bool
 	NoCleanup   bool
 	ChildLogDir string
 	LogFile     string
@@ -35,7 +34,6 @@ const (
 )
 
 type Taskmasterd struct {
-	NoDaemon    bool            `mapstructure:"nodaemon"`
 	NoCleanup   bool            `mapstructure:"nocleanup"`
 	ChildLogDir string          `mapstructure:"childlogdir"`
 	LogFile     string          `mapstructure:"logfile"`
@@ -302,7 +300,6 @@ func getDefaultTaskmasterd() (*Taskmasterd, error) {
 	}
 
 	taskmasterd := Taskmasterd{
-		NoDaemon:    false,
 		NoCleanup:   false,
 		ChildLogDir: os.TempDir(),
 		LogFile:     cwd + "/taskmasterd.log",
@@ -469,7 +466,6 @@ func (config *Config) parsePrograms(configMap map[string]any) error {
 
 func newTaskmasterd(ctx *Context) (*Taskmasterd, error) {
 	taskmasterd := Taskmasterd{
-		NoDaemon:    ctx.NoDaemon,
 		NoCleanup:   ctx.NoCleanup,
 		ChildLogDir: ctx.ChildLogDir,
 		LogFile:     ctx.LogFile,
@@ -494,10 +490,6 @@ func newTaskmasterd(ctx *Context) (*Taskmasterd, error) {
 
 func (config *Config) overrideTaskmasterd(override *Taskmasterd) {
 	base := &config.Taskmasterd
-
-	if override.NoDaemon {
-		base.NoDaemon = override.NoDaemon
-	}
 
 	if override.NoCleanup {
 		base.NoCleanup = override.NoCleanup

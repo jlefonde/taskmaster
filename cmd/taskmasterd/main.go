@@ -7,7 +7,6 @@ import (
 
 	"taskmaster/internal/config"
 	"taskmaster/internal/supervisor"
-	"taskmaster/internal/version"
 )
 
 var ctx config.Context
@@ -21,9 +20,6 @@ func init() {
 	const (
 		configDefault      = ""
 		configUsage        = "The path to a taskmasterd configuration file."
-		versionUsage       = "Print the taskmasterd version number out to stdout and exit."
-		noDaemonDefault    = false
-		noDaemonUsage      = "Run taskmasterd in the foreground."
 		noCleanupDefault   = false
 		noCleanupUsage     = "Prevent taskmasterd from performing cleanup (removal of old AUTO process log files) at startup."
 		childLogDirDefault = ""
@@ -34,12 +30,8 @@ func init() {
 		logLevelUsage      = "The logging level at which taskmaster should write to the activity log. [DEBUG, INFO, WARNING, ERROR, CRITICAL]"
 	)
 
-	flag.BoolFunc("version", versionUsage, version.PrintVersion)
-	flag.BoolFunc("v", versionUsage, version.PrintVersion)
 	flag.StringVar(&ctx.ConfigPath, "configuration", configDefault, configUsage)
 	flag.StringVar(&ctx.ConfigPath, "c", configDefault, configUsage)
-	flag.BoolVar(&ctx.NoDaemon, "nodaemon", noDaemonDefault, noDaemonUsage)
-	flag.BoolVar(&ctx.NoDaemon, "n", noDaemonDefault, noDaemonUsage)
 	flag.BoolVar(&ctx.NoCleanup, "nocleanup", noCleanupDefault, noCleanupUsage)
 	flag.BoolVar(&ctx.NoCleanup, "k", noCleanupDefault, noCleanupUsage)
 	flag.StringVar(&ctx.ChildLogDir, "childlogdir", childLogDirDefault, childLogDirUsage)

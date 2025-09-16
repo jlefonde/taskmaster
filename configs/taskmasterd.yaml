@@ -1,5 +1,4 @@
 taskmasterd:
-    nodaemon: true
     nocleanup: false
     childlogdir: /var/log/taskmasterd/
     logfile: /var/log/taskmasterd/taskmasterd.log
