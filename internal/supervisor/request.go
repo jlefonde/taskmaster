@@ -2,7 +2,9 @@ package supervisor
 
 import (
 	"fmt"
+	"os"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"taskmaster/internal/config"
@@ -87,6 +89,53 @@ func (s *Supervisor) StopRequest(processName string, replyChan chan<- []program.
 	processReplychan := make(chan program.RequestReply, 1)
 	pm.StopProcess(processName, processReplychan)
 	replyChan <- []program.RequestReply{<-processReplychan}
+}
+
+func (s *Supervisor) getAllProgramsProcessPids(replyChan chan<- []program.RequestReply) {
+	var replies []program.RequestReply
+
+	for _, pm := range s.programManagers {
+		programReplies := make(chan []program.RequestReply, 1)
+		pm.GetAllProcessPIDs(programReplies)
+		replies = append(replies, <-programReplies...)
+	}
+
+	replyChan <- replies
+}
+
+func (s *Supervisor) PidRequest(processName string, replyChan chan<- []program.RequestReply) {
+	if processName == "" {
+		replyChan <- []program.RequestReply{{
+			ProcessName: "taskmasterd",
+			Message:     strconv.Itoa(os.Getpid())}}
+		return
+	}
+
+	if processName == "all" {
+		s.getAllProgramsProcessPids(replyChan)
+		return
+	}
+
+	programName, processNameCut, sepFound := strings.Cut(processName, ":")
+	pm, ok := s.programManagers[programName]
+	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
+		replyChan <- []program.RequestReply{
+			{
+				ProcessName: processName,
+				Err:         fmt.Errorf("no such process"),
+			},
+		}
+		return
+	}
+
+	if (processNameCut == "" || processNameCut == "*") && pm.Config.NumProcs > 1 {
+		pm.GetAllProcessPIDs(replyChan)
+		return
+	}
+
+	reply := make(chan program.RequestReply, 1)
+	pm.GetProcessPID(processName, reply)
+	replyChan <- []program.RequestReply{<-reply}
 }
 
 func (s *Supervisor) getAllProgramsStatus(replyChan chan<- []program.ProcessStatus) {

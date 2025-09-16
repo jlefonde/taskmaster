@@ -20,6 +20,7 @@ const (
 	STOP    Action = "stop"
 	RESTART Action = "restart"
 	STATUS  Action = "status"
+	PID     Action = "pid"
 	UPDATE  Action = "update"
 	QUIT    Action = "quit"
 	EXIT    Action = "exit"
@@ -65,6 +66,7 @@ func newActions(supervisor SupervisorInterface) map[Action]*actionMetadata {
 		STOP:    newActionMetadata(string(STOP), stopHelper, stopAction, processCompleter),
 		RESTART: newActionMetadata(string(RESTART), restartHelper, restartAction, processCompleter),
 		STATUS:  newActionMetadata(string(STATUS), statusHelper, statusAction, processCompleter),
+		PID:     newActionMetadata(string(PID), pidHelper, pidAction, processCompleter),
 		UPDATE:  newActionMetadata(string(UPDATE), updateHelper, updateAction, nil),
 		QUIT:    newActionMetadata(string(QUIT), quitHelper, shutdownAction, nil),
 		EXIT:    newActionMetadata(string(EXIT), exitHelper, shutdownAction, nil),
@@ -134,14 +136,18 @@ func processReplies(replyChan chan []program.RequestReply) {
 	displayRequestResults(replies)
 }
 
-func executeProcessAction(lineFields []string, actionFunc func(string, chan<- []program.RequestReply)) error {
-	if len(lineFields) == 0 {
+func executeProcessAction(lineFields []string, actionFunc func(string, chan<- []program.RequestReply), minField int) error {
+	if len(lineFields) < minField {
 		return errors.New("invalid action syntax")
 	}
 
 	allFound := containsAll(lineFields)
 
-	if allFound {
+	if minField == 0 && len(lineFields) == 0 {
+		replyChan := make(chan []program.RequestReply, 1)
+		actionFunc("", replyChan)
+		processReplies(replyChan)
+	} else if allFound {
 		replyChan := make(chan []program.RequestReply, 1)
 		actionFunc("all", replyChan)
 		processReplies(replyChan)
@@ -157,11 +163,11 @@ func executeProcessAction(lineFields []string, actionFunc func(string, chan<- []
 }
 
 func startAction(ctl *Controller, lineFields []string) error {
-	return executeProcessAction(lineFields, ctl.supervisor.StartRequest)
+	return executeProcessAction(lineFields, ctl.supervisor.StartRequest, 1)
 }
 
 func stopAction(ctl *Controller, lineFields []string) error {
-	return executeProcessAction(lineFields, ctl.supervisor.StopRequest)
+	return executeProcessAction(lineFields, ctl.supervisor.StopRequest, 1)
 }
 
 func restartAction(ctl *Controller, lineFields []string) error {
@@ -214,6 +220,10 @@ func statusAction(ctl *Controller, lineFields []string) error {
 	}
 
 	return nil
+}
+
+func pidAction(ctl *Controller, lineFields []string) error {
+	return executeProcessAction(lineFields, ctl.supervisor.PidRequest, 0)
 }
 
 func updateAction(ctl *Controller, lineFields []string) error {
@@ -301,6 +311,13 @@ func statusHelper() {
 	fmt.Println("status all\t\tShow status of all processes")
 	fmt.Println("status <name>\t\tShow status of a process")
 	fmt.Println("status <name> <name>\tShow status of multiple processes")
+}
+
+func pidHelper() {
+	fmt.Println("pid \t\t\tGet the PID of taskmasterd")
+	fmt.Println("pid all\t\tGet the PID of all processes")
+	fmt.Println("pid <name>\t\tGet the PID of a process")
+	fmt.Println("pid <name> <name>\tGet the PID of multiple processes")
 }
 
 func updateHelper() {

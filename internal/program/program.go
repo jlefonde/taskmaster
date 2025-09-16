@@ -1,7 +1,9 @@
 package program
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -344,6 +346,47 @@ func (pm *ProgramManager) StopAllProcesses(replyChan chan<- []RequestReply) {
 	for processName := range pm.Processes {
 		go func(processName string) {
 			pm.StopProcess(processName, processReplyChan)
+		}(processName)
+	}
+
+	var replies []RequestReply
+	for range processCount {
+		replies = append(replies, <-processReplyChan)
+	}
+
+	replyChan <- replies
+}
+
+func (pm *ProgramManager) GetProcessPID(processName string, replyChan chan<- RequestReply) {
+	mp, ok := pm.Processes[processName]
+	if !ok {
+		replyChan <- RequestReply{
+			ProcessName: processName,
+			Err:         fmt.Errorf("no such process"),
+		}
+		return
+	}
+
+	if mp.State == RUNNING {
+		replyChan <- RequestReply{
+			ProcessName: processName,
+			Message:     strconv.Itoa(mp.Cmd.Process.Pid),
+		}
+	} else {
+		replyChan <- RequestReply{
+			ProcessName: processName,
+			Err:         errors.New("not running"),
+		}
+	}
+}
+
+func (pm *ProgramManager) GetAllProcessPIDs(replyChan chan<- []RequestReply) {
+	processCount := len(pm.Processes)
+	processReplyChan := make(chan RequestReply, processCount)
+
+	for processName := range pm.Processes {
+		go func(processName string) {
+			pm.GetProcessPID(processName, processReplyChan)
 		}(processName)
 	}
 

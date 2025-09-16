@@ -155,8 +155,8 @@ taskmaster> help
 ┌────────────────────── Available Actions ─────────────────────┐
 │ Type 'help <action>'                                         │
 └──────────────────────────────────────────────────────────────┘
-start       stop        restart     status      
-update      quit        exit        shutdown
+stop        pid         start       restart     
+status      update      quit        exit        
 
 # Start all processes
 taskmaster> start all
