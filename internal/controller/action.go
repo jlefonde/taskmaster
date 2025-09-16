@@ -329,9 +329,6 @@ func shutdownAction(ctl *Controller, lineFields []string) error {
 }
 
 func helpAction(ctl *Controller, lineFields []string) error {
-	fields := strings.Join(lineFields, " ")
-	ctl.log.Info("requested: help ", fields)
-	startTime := time.Now()
 	if len(lineFields) == 0 {
 		fmt.Println("┌────────────────────── Available Actions ─────────────────────┐")
 		fmt.Println("│ Type 'help <action>'                                         │")
@@ -365,13 +362,6 @@ func helpAction(ctl *Controller, lineFields []string) error {
 		action.helper()
 	} else {
 		fmt.Fprintln(os.Stderr, "*** invalid help syntax. Use: help <action>")
-	}
-
-	elapsedTime := time.Since(startTime).Seconds()
-	if elapsedTime < 0.1 {
-		ctl.log.Infof("completed: help %s", fields)
-	} else {
-		ctl.log.Infof("completed: (%.3fs) help %s", elapsedTime, fields)
 	}
 
 	return nil
