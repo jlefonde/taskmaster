@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -22,9 +23,9 @@ type ProcessExitInfo struct {
 }
 
 type RequestReply struct {
-	ProcessName string
-	Message     string
-	Err         error
+	Name    string
+	Message string
+	Err     error
 }
 
 type ProcessStatus struct {
@@ -50,6 +51,7 @@ type ManagedProcess struct {
 	Stderr          *os.File
 	StdoutLogFile   string
 	StderrLogFile   string
+	mu              sync.Mutex
 }
 
 func newManagedProcess(processNum int, processName string, exitChan chan ProcessExitInfo, stoppedSignal os.Signal) *ManagedProcess {
@@ -60,6 +62,90 @@ func newManagedProcess(processNum int, processName string, exitChan chan Process
 		ExitChan:      exitChan,
 		StoppedSignal: stoppedSignal,
 	}
+}
+
+func (mp *ManagedProcess) getCmd() *exec.Cmd {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	return mp.Cmd
+}
+
+func (mp *ManagedProcess) setCmd(cmd *exec.Cmd) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	mp.Cmd = cmd
+}
+
+func (mp *ManagedProcess) getState() State {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	return mp.State
+}
+
+func (mp *ManagedProcess) setState(state State) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	mp.State = state
+}
+
+func (mp *ManagedProcess) getStartTime() time.Time {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	return mp.StartTime
+}
+
+func (mp *ManagedProcess) setStartTime(startTime time.Time) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	mp.StartTime = startTime
+}
+
+func (mp *ManagedProcess) getStopTime() time.Time {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	return mp.StopTime
+}
+
+func (mp *ManagedProcess) setStopTime(stopTime time.Time) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	mp.StopTime = stopTime
+}
+
+func (mp *ManagedProcess) getNextRestartTime() time.Time {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	return mp.NextRestartTime
+}
+
+func (mp *ManagedProcess) setNextRestartTime(nextRestartTime time.Time) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	mp.NextRestartTime = nextRestartTime
+}
+
+func (mp *ManagedProcess) getRestartCount() int {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	return mp.RestartCount
+}
+
+func (mp *ManagedProcess) setRestartCount(restartCount int) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	mp.RestartCount = restartCount
 }
 
 func (mp *ManagedProcess) getDefaultLogFile(pm *ProgramManager, outFile string) string {
@@ -153,11 +239,11 @@ func (mp *ManagedProcess) newCmd(config *config.Program) (*exec.Cmd, error) {
 }
 
 func (mp *ManagedProcess) hasStartTimeoutExpired(startSecs int) bool {
-	return time.Now().After(mp.StartTime.Add(time.Duration(startSecs) * time.Second))
+	return time.Now().After(mp.getStartTime().Add(time.Duration(startSecs) * time.Second))
 }
 
 func (mp *ManagedProcess) hasStopTimeoutExpired(stopSecs int) bool {
-	return time.Now().After(mp.StopTime.Add(time.Duration(stopSecs) * time.Second))
+	return time.Now().After(mp.getStopTime().Add(time.Duration(stopSecs) * time.Second))
 }
 
 func (mp *ManagedProcess) exitCodeExpected(processExitCode int, exitCodes []int) bool {
@@ -172,7 +258,7 @@ func (mp *ManagedProcess) exitCodeExpected(processExitCode int, exitCodes []int)
 
 func (mp *ManagedProcess) exitExpected(processExitCode int, exitCodes []int, startSecs int) bool {
 	exitCodeExpected := mp.exitCodeExpected(processExitCode, exitCodes)
-	uptime := mp.ExitTime.Sub(mp.StartTime)
+	uptime := mp.ExitTime.Sub(mp.getStartTime())
 
 	return exitCodeExpected && uptime > time.Duration(startSecs)
 }
@@ -184,16 +270,17 @@ func (mp *ManagedProcess) shouldRestart(autoRestart config.AutoRestart, exitCode
 	case config.AUTORESTART_ALWAYS:
 		return true
 	case config.AUTORESTART_ON_FAILURE:
-		return !mp.exitCodeExpected(mp.Cmd.ProcessState.ExitCode(), exitCodes)
+		return !mp.exitCodeExpected(mp.getCmd().ProcessState.ExitCode(), exitCodes)
 	default:
 		return false
 	}
 }
 
 func (mp *ManagedProcess) getDescription() string {
-	switch mp.State {
+	state := mp.getState()
+	switch state {
 	case RUNNING:
-		uptime := time.Since(mp.StartTime)
+		uptime := time.Since(mp.getStartTime())
 		totalSeconds := int(uptime.Seconds())
 		days := totalSeconds / 86400
 		hours := (totalSeconds / 3600) % 24
@@ -206,7 +293,7 @@ func (mp *ManagedProcess) getDescription() string {
 			return fmt.Sprintf("pid %d, uptime %02d:%02d:%02d", mp.Cmd.Process.Pid, hours, minutes, seconds)
 		}
 	case EXITED, STOPPED:
-		if mp.State == STOPPED && mp.ExitTime.Equal(time.Time{}) {
+		if state == STOPPED && mp.ExitTime.Equal(time.Time{}) {
 			return "not started"
 		}
 
@@ -221,7 +308,7 @@ func (mp *ManagedProcess) getDescription() string {
 func (mp *ManagedProcess) getStatus(processName string) *ProcessStatus {
 	return &ProcessStatus{
 		Name:        processName,
-		State:       mp.State,
+		State:       mp.getState(),
 		Description: mp.getDescription(),
 	}
 }

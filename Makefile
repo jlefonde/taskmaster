@@ -6,7 +6,7 @@ CMD_DIR = ./cmd
 all: $(NAME)
 
 $(NAME):
-	@go build -o $(BIN_DIR)/$@ $(CMD_DIR)/${NAME}/main.go 
+	@go build -race -o $(BIN_DIR)/$@ $(CMD_DIR)/${NAME}/main.go 
 
 clean:
 	@rm -rf $(BIN_DIR)

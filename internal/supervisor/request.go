@@ -34,8 +34,8 @@ func (s *Supervisor) StartRequest(processName string, replyChan chan<- []program
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
 		replyChan <- []program.RequestReply{
 			{
-				ProcessName: processName,
-				Err:         fmt.Errorf("no such process"),
+				Name: processName,
+				Err:  fmt.Errorf("no such process"),
 			},
 		}
 		return
@@ -74,8 +74,8 @@ func (s *Supervisor) StopRequest(processName string, replyChan chan<- []program.
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
 		replyChan <- []program.RequestReply{
 			{
-				ProcessName: processName,
-				Err:         fmt.Errorf("no such process"),
+				Name: processName,
+				Err:  fmt.Errorf("no such process"),
 			},
 		}
 		return
@@ -106,8 +106,8 @@ func (s *Supervisor) getAllProgramsProcessPids(replyChan chan<- []program.Reques
 func (s *Supervisor) PidRequest(processName string, replyChan chan<- []program.RequestReply) {
 	if processName == "" {
 		replyChan <- []program.RequestReply{{
-			ProcessName: "taskmasterd",
-			Message:     strconv.Itoa(os.Getpid())}}
+			Name:    "taskmasterd",
+			Message: strconv.Itoa(os.Getpid())}}
 		return
 	}
 
@@ -121,8 +121,8 @@ func (s *Supervisor) PidRequest(processName string, replyChan chan<- []program.R
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
 		replyChan <- []program.RequestReply{
 			{
-				ProcessName: processName,
-				Err:         fmt.Errorf("no such process"),
+				Name: processName,
+				Err:  fmt.Errorf("no such process"),
 			},
 		}
 		return
@@ -188,8 +188,8 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 	newConfig, err := config.NewConfig(s.config.Path)
 	if err != nil {
 		replyChan <- program.RequestReply{
-			ProcessName: "",
-			Err:         err,
+			Name: "",
+			Err:  err,
 		}
 
 		s.log.Errorf("failed to update config: %v", err)
@@ -215,14 +215,14 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 		delete(s.programManagers, pm.Name)
 
 		replyChan <- program.RequestReply{
-			ProcessName: pm.Name,
-			Message:     "stopped",
+			Name:    pm.Name,
+			Message: "stopped",
 		}
 
 		if !ok {
 			replyChan <- program.RequestReply{
-				ProcessName: pm.Name,
-				Message:     "removed process group",
+				Name:    pm.Name,
+				Message: "removed process group",
 			}
 
 			s.log.Info("removed: ", pm.Name)
@@ -230,8 +230,8 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 			s.startProgramManager(programName, &programConfig)
 
 			replyChan <- program.RequestReply{
-				ProcessName: pm.Name,
-				Message:     "updated process group",
+				Name:    pm.Name,
+				Message: "updated process group",
 			}
 
 			s.log.Info("updated: ", pm.Name)
@@ -245,8 +245,8 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 			s.startProgramManager(programName, &programConfig)
 
 			replyChan <- program.RequestReply{
-				ProcessName: programName,
-				Message:     "added process group",
+				Name:    programName,
+				Message: "added process group",
 			}
 
 			s.log.Info("added: ", programName)

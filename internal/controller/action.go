@@ -98,7 +98,7 @@ func containsAll(lineFields []string) bool {
 }
 
 func sortReplies(a, b program.RequestReply) int {
-	return strings.Compare(strings.ToLower(a.ProcessName), strings.ToLower(b.ProcessName))
+	return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 }
 
 func sortStatuses(a, b program.ProcessStatus) int {
@@ -122,9 +122,9 @@ func getMaxProcessNameWidth(statuses []program.ProcessStatus) int {
 func displayRequestResults(replies []program.RequestReply) {
 	for _, reply := range replies {
 		if reply.Err != nil {
-			fmt.Fprintf(os.Stderr, "%s: ERROR (%v)\n", reply.ProcessName, reply.Err)
+			fmt.Fprintf(os.Stderr, "%s: ERROR (%v)\n", reply.Name, reply.Err)
 		} else if reply.Message != "" {
-			fmt.Printf("%s: %s\n", reply.ProcessName, reply.Message)
+			fmt.Printf("%s: %s\n", reply.Name, reply.Message)
 		}
 	}
 }
@@ -238,7 +238,7 @@ func updateAction(ctl *Controller, lineFields []string) error {
 		if reply.Err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", reply.Err)
 		} else if reply.Message != "" {
-			fmt.Printf("%s: %s\n", reply.ProcessName, reply.Message)
+			fmt.Printf("%s: %s\n", reply.Name, reply.Message)
 		}
 	}
 
