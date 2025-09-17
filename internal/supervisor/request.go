@@ -30,7 +30,7 @@ func (s *Supervisor) StartRequest(processName string, replyChan chan<- []program
 	}
 
 	programName, processNameCut, sepFound := strings.Cut(processName, ":")
-	pm, ok := s.getProgramManager(programName)
+	pm, ok := s.GetProgramManager(programName)
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
 		replyChan <- []program.RequestReply{
 			{
@@ -70,7 +70,7 @@ func (s *Supervisor) StopRequest(processName string, replyChan chan<- []program.
 	}
 
 	programName, processNameCut, sepFound := strings.Cut(processName, ":")
-	pm, ok := s.getProgramManager(programName)
+	pm, ok := s.GetProgramManager(programName)
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
 		replyChan <- []program.RequestReply{
 			{
@@ -117,7 +117,7 @@ func (s *Supervisor) PidRequest(processName string, replyChan chan<- []program.R
 	}
 
 	programName, processNameCut, sepFound := strings.Cut(processName, ":")
-	pm, ok := s.getProgramManager(programName)
+	pm, ok := s.GetProgramManager(programName)
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
 		replyChan <- []program.RequestReply{
 			{
@@ -157,7 +157,7 @@ func (s *Supervisor) StatusRequest(processName string, replyChan chan<- []progra
 	}
 
 	programName, processNameCut, sepFound := strings.Cut(processName, ":")
-	pm, ok := s.getProgramManager(programName)
+	pm, ok := s.GetProgramManager(programName)
 	if !ok || (pm.Config.NumProcs > 1 && !sepFound) {
 		replyChan <- []program.ProcessStatus{
 			{
@@ -241,7 +241,7 @@ func (s *Supervisor) UpdateRequest(replyChan chan<- program.RequestReply) {
 
 		pm.Stop()
 		pm.Wait()
-		s.deleteProgramManager(programName)
+		s.DeleteProgramManager(programName)
 
 		replyChan <- program.RequestReply{
 			Name:    programName,

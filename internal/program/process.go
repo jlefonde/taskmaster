@@ -86,7 +86,7 @@ func (mp *ManagedProcess) ExitTime() time.Time {
 	return mp.exitTime
 }
 
-func (mp *ManagedProcess) setExitTime(exitTime time.Time) {
+func (mp *ManagedProcess) SetExitTime(exitTime time.Time) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
@@ -107,7 +107,7 @@ func (mp *ManagedProcess) Cmd() *exec.Cmd {
 	return mp.cmd
 }
 
-func (mp *ManagedProcess) setCmd(cmd *exec.Cmd) {
+func (mp *ManagedProcess) SetCmd(cmd *exec.Cmd) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
@@ -121,7 +121,7 @@ func (mp *ManagedProcess) State() State {
 	return mp.state
 }
 
-func (mp *ManagedProcess) setState(state State) {
+func (mp *ManagedProcess) SetState(state State) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
@@ -135,7 +135,7 @@ func (mp *ManagedProcess) StartTime() time.Time {
 	return mp.startTime
 }
 
-func (mp *ManagedProcess) setStartTime(startTime time.Time) {
+func (mp *ManagedProcess) SetStartTime(startTime time.Time) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
@@ -149,7 +149,7 @@ func (mp *ManagedProcess) StopTime() time.Time {
 	return mp.stopTime
 }
 
-func (mp *ManagedProcess) setStopTime(stopTime time.Time) {
+func (mp *ManagedProcess) SetStopTime(stopTime time.Time) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
@@ -163,7 +163,7 @@ func (mp *ManagedProcess) NextRestartTime() time.Time {
 	return mp.nextRestartTime
 }
 
-func (mp *ManagedProcess) setNextRestartTime(nextRestartTime time.Time) {
+func (mp *ManagedProcess) SetNextRestartTime(nextRestartTime time.Time) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
@@ -177,7 +177,7 @@ func (mp *ManagedProcess) RestartCount() int {
 	return mp.restartCount
 }
 
-func (mp *ManagedProcess) setRestartCount(restartCount int) {
+func (mp *ManagedProcess) SetRestartCount(restartCount int) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
@@ -198,7 +198,7 @@ func (mp *ManagedProcess) getDefaultLogFile(pm *ProgramManager, outFile string) 
 		suffix[i] = charset[rand.IntN(len(charset))]
 	}
 
-	logFileName := fmt.Sprintf("%s%s-%s---taskmaster-%s.log", pm.GetName(), num, outFile, suffix)
+	logFileName := fmt.Sprintf("%s%s-%s---taskmaster-%s.log", pm.Name(), num, outFile, suffix)
 
 	return filepath.Join(pm.childLogDir, logFileName)
 }

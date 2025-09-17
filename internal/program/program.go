@@ -44,7 +44,7 @@ type ProgramManager struct {
 	Config      *config.Program
 	childLogDir string
 	log         *logger.Logger
-	Processes   map[string]*ManagedProcess
+	processes   map[string]*ManagedProcess
 	requests    map[string]chan<- RequestReply
 	transitions *map[State]map[Event]Transition
 	stopChan    chan struct{}
@@ -60,7 +60,7 @@ func NewProgramManager(programName string, programConfig *config.Program, childL
 		Config:      programConfig,
 		childLogDir: childLogDir,
 		log:         log,
-		Processes:   make(map[string]*ManagedProcess),
+		processes:   make(map[string]*ManagedProcess),
 		requests:    make(map[string]chan<- RequestReply),
 		transitions: newTransitions(),
 		stopChan:    make(chan struct{}),
@@ -84,7 +84,7 @@ func newTransitions() *map[State]map[Event]Transition {
 				pm.replyToRequest(mp, "started", false)
 				pm.log.Infof("success: '%s' entered RUNNING state, process has stayed up for > than %d seconds (startsecs)",
 					mp.name, pm.Config.StartSecs)
-				mp.setRestartCount(0)
+				mp.SetRestartCount(0)
 				return ""
 			}},
 			STOP: {To: STOPPING, Action: func(pm *ProgramManager, mp *ManagedProcess) Event {
@@ -144,22 +144,33 @@ func newTransitions() *map[State]map[Event]Transition {
 	}
 }
 
-func (pm *ProgramManager) GetName() string {
+func (pm *ProgramManager) Name() string {
 	return pm.name
 }
 
-func (pm *ProgramManager) getProcessNames() []string {
+func (pm *ProgramManager) Processes() map[string]*ManagedProcess {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	names := make([]string, 0, len(pm.Processes))
-	for processName := range pm.Processes {
-		names = append(names, processName)
-	}
-	return names
+	return pm.processes
 }
 
-func (pm *ProgramManager) getRequest(processName string) (chan<- RequestReply, bool) {
+func (pm *ProgramManager) GetProcess(processName string) (*ManagedProcess, bool) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	mp, ok := pm.processes[processName]
+	return mp, ok
+}
+
+func (pm *ProgramManager) SetProcess(processName string, mp *ManagedProcess) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	pm.processes[processName] = mp
+}
+
+func (pm *ProgramManager) GetRequest(processName string) (chan<- RequestReply, bool) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -168,14 +179,27 @@ func (pm *ProgramManager) getRequest(processName string) (chan<- RequestReply, b
 	return req, ok
 }
 
-func (pm *ProgramManager) setRequest(processName string, replyChan chan<- RequestReply) {
+func (pm *ProgramManager) getProcessNames() []string {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	processes := pm.Processes()
+	names := make([]string, 0, len(processes))
+	for processName := range processes {
+		names = append(names, processName)
+	}
+
+	return names
+}
+
+func (pm *ProgramManager) SetRequest(processName string, replyChan chan<- RequestReply) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
 	pm.requests[processName] = replyChan
 }
 
-func (pm *ProgramManager) deleteRequest(processName string) {
+func (pm *ProgramManager) DeleteRequest(processName string) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -198,14 +222,14 @@ func (pm *ProgramManager) sendEvent(event Event, mp *ManagedProcess) {
 		return
 	}
 
-	mp.setState(transition.To)
+	mp.SetState(transition.To)
 	if event := transition.Action(pm, mp); event != "" {
 		pm.sendEvent(event, mp)
 	}
 }
 
 func (pm *ProgramManager) replyToRequest(mp *ManagedProcess, msg string, isError bool) {
-	replyChan, ok := pm.getRequest(mp.name)
+	replyChan, ok := pm.GetRequest(mp.name)
 	if ok {
 		if isError {
 			replyChan <- RequestReply{
@@ -219,12 +243,12 @@ func (pm *ProgramManager) replyToRequest(mp *ManagedProcess, msg string, isError
 			}
 		}
 
-		pm.deleteRequest(mp.name)
+		pm.DeleteRequest(mp.name)
 	}
 }
 
 func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
-	mp.setStartTime(time.Time{})
+	mp.SetStartTime(time.Time{})
 
 	if err := mp.setProcessStdLogs(pm); err != nil {
 		pm.log.Warningf("failed to set logs file for %s: %v", mp.name, err)
@@ -241,8 +265,8 @@ func (pm *ProgramManager) startProcess(mp *ManagedProcess) Event {
 		return PROCESS_FAILED
 	}
 
-	mp.setStartTime(time.Now())
-	mp.setCmd(cmd)
+	mp.SetStartTime(time.Now())
+	mp.SetCmd(cmd)
 
 	pm.log.Infof("spawned: '%s' with pid %d", mp.name, mp.Cmd().Process.Pid)
 
@@ -264,8 +288,8 @@ func (pm *ProgramManager) restartProcess(mp *ManagedProcess) Event {
 		return TIMEOUT
 	}
 
-	mp.setRestartCount(restartCount + 1)
-	mp.setNextRestartTime(time.Now().Add(time.Duration(restartCount+1) * time.Second))
+	mp.SetRestartCount(restartCount + 1)
+	mp.SetNextRestartTime(time.Now().Add(time.Duration(restartCount+1) * time.Second))
 
 	return ""
 }
@@ -279,7 +303,7 @@ func (pm *ProgramManager) stopProcess(mp *ManagedProcess) Event {
 		return PROCESS_STOPPED
 	}
 
-	mp.setStopTime(time.Now())
+	mp.SetStopTime(time.Now())
 
 	return ""
 }
@@ -301,7 +325,7 @@ func (pm *ProgramManager) forceStop(mp *ManagedProcess) {
 func (pm *ProgramManager) initiateShutdown() {
 	if !pm.terminating {
 		pm.terminating = true
-		for _, mp := range pm.Processes {
+		for _, mp := range pm.Processes() {
 			state := mp.State()
 			if state == RUNNING || state == STARTING {
 				pm.sendEvent(STOP, mp)
@@ -311,7 +335,7 @@ func (pm *ProgramManager) initiateShutdown() {
 }
 
 func (pm *ProgramManager) allProcessesTerminated() bool {
-	for _, mp := range pm.Processes {
+	for _, mp := range pm.Processes() {
 		state := mp.State()
 		if state != STOPPED && state != EXITED && state != BACKOFF && state != FATAL {
 			return false
@@ -322,7 +346,7 @@ func (pm *ProgramManager) allProcessesTerminated() bool {
 }
 
 func (pm *ProgramManager) StartProcess(processName string, replyChan chan<- RequestReply) {
-	mp, ok := pm.Processes[processName]
+	mp, ok := pm.GetProcess(processName)
 	if !ok {
 		replyChan <- RequestReply{
 			Name: processName,
@@ -339,7 +363,7 @@ func (pm *ProgramManager) StartProcess(processName string, replyChan chan<- Requ
 			Err:  fmt.Errorf("already %s", strings.ToLower(string(state))),
 		}
 	default:
-		pm.setRequest(processName, replyChan)
+		pm.SetRequest(processName, replyChan)
 		pm.sendEvent(START, mp)
 	}
 }
@@ -364,7 +388,7 @@ func (pm *ProgramManager) StartAllProcesses(replyChan chan<- []RequestReply) {
 }
 
 func (pm *ProgramManager) StopProcess(processName string, replyChan chan<- RequestReply) {
-	mp, ok := pm.Processes[processName]
+	mp, ok := pm.GetProcess(processName)
 	if !ok {
 		replyChan <- RequestReply{
 			Name: processName,
@@ -381,7 +405,7 @@ func (pm *ProgramManager) StopProcess(processName string, replyChan chan<- Reque
 			Err:  fmt.Errorf("already %s", strings.ToLower(string(state))),
 		}
 	default:
-		pm.setRequest(processName, replyChan)
+		pm.SetRequest(processName, replyChan)
 		pm.sendEvent(STOP, mp)
 	}
 }
@@ -406,7 +430,7 @@ func (pm *ProgramManager) StopAllProcesses(replyChan chan<- []RequestReply) {
 }
 
 func (pm *ProgramManager) GetProcessPID(processName string, replyChan chan<- RequestReply) {
-	mp, ok := pm.Processes[processName]
+	mp, ok := pm.GetProcess(processName)
 	if !ok {
 		replyChan <- RequestReply{
 			Name: processName,
@@ -430,10 +454,11 @@ func (pm *ProgramManager) GetProcessPID(processName string, replyChan chan<- Req
 }
 
 func (pm *ProgramManager) GetAllProcessPIDs(replyChan chan<- []RequestReply) {
-	processCount := len(pm.Processes)
+	processes := pm.Processes()
+	processCount := len(processes)
 	processReplyChan := make(chan RequestReply, processCount)
 
-	for processName := range pm.Processes {
+	for processName := range processes {
 		go func(processName string) {
 			pm.GetProcessPID(processName, processReplyChan)
 		}(processName)
@@ -448,10 +473,11 @@ func (pm *ProgramManager) GetAllProcessPIDs(replyChan chan<- []RequestReply) {
 }
 
 func (pm *ProgramManager) GetAllProcessesStatus(replyChan chan<- []ProcessStatus) {
-	processCount := len(pm.Processes)
+	processes := pm.Processes()
+	processCount := len(processes)
 	processReplyChan := make(chan ProcessStatus, processCount)
 
-	for processName := range pm.Processes {
+	for processName := range processes {
 		go func(processName string) {
 			pm.GetProcessStatus(processName, processReplyChan)
 		}(processName)
@@ -466,7 +492,7 @@ func (pm *ProgramManager) GetAllProcessesStatus(replyChan chan<- []ProcessStatus
 }
 
 func (pm *ProgramManager) GetProcessStatus(processName string, replyChan chan<- ProcessStatus) {
-	mp, ok := pm.Processes[processName]
+	mp, ok := pm.GetProcess(processName)
 	if !ok {
 		replyChan <- ProcessStatus{
 			Name: processName,
@@ -500,10 +526,11 @@ func (pm *ProgramManager) Run() {
 
 	for processNum := range pm.Config.NumProcs {
 		processName := pm.getProcessName(processNum)
-		pm.Processes[processName] = newManagedProcess(processNum, processName, pm.exitChan, pm.Config.StopSignal)
+		pm.SetProcess(processName, newManagedProcess(processNum, processName, pm.exitChan, pm.Config.StopSignal))
 
 		if pm.Config.AutoStart {
-			pm.sendEvent(START, pm.Processes[processName])
+			mp, _ := pm.GetProcess(processName)
+			pm.sendEvent(START, mp)
 		}
 	}
 
@@ -520,7 +547,7 @@ func (pm *ProgramManager) Run() {
 			}
 		case exit := <-pm.exitChan:
 			mp := exit.Mp
-			mp.setExitTime(exit.ExitTime)
+			mp.SetExitTime(exit.ExitTime)
 
 			state := mp.State()
 			if state == STOPPING {
@@ -541,7 +568,7 @@ func (pm *ProgramManager) Run() {
 				pm.replyToRequest(mp, fmt.Sprintf("already %s", strings.ToLower(string(state))), true)
 			}
 		case <-ticker.C:
-			for _, mp := range pm.Processes {
+			for _, mp := range pm.Processes() {
 				go pm.checkProcessState(mp)
 			}
 		}

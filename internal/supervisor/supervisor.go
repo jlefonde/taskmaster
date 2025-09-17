@@ -49,7 +49,7 @@ func (s *Supervisor) ProgramManagers() map[string]*program.ProgramManager {
 	return s.programManagers
 }
 
-func (s *Supervisor) getProgramManager(programName string) (*program.ProgramManager, bool) {
+func (s *Supervisor) GetProgramManager(programName string) (*program.ProgramManager, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -57,14 +57,14 @@ func (s *Supervisor) getProgramManager(programName string) (*program.ProgramMana
 	return pm, ok
 }
 
-func (s *Supervisor) setProgramManager(programName string, pm *program.ProgramManager) {
+func (s *Supervisor) SetProgramManager(programName string, pm *program.ProgramManager) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.programManagers[programName] = pm
 }
 
-func (s *Supervisor) deleteProgramManager(programName string) {
+func (s *Supervisor) DeleteProgramManager(programName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -94,7 +94,7 @@ func (s *Supervisor) GetProcessNames() func(string) []string {
 	return func(string) []string {
 		var processNames []string
 		for programName, pm := range s.ProgramManagers() {
-			for processName := range pm.Processes {
+			for processName := range pm.Processes() {
 				processNames = append(processNames, processName)
 			}
 
@@ -109,7 +109,7 @@ func (s *Supervisor) GetProcessNames() func(string) []string {
 
 func (s *Supervisor) startProgramManager(programName string, programConfig *config.Program) {
 	pm := program.NewProgramManager(programName, programConfig, s.config.Taskmasterd.ChildLogDir, s.log)
-	s.setProgramManager(programName, pm)
+	s.SetProgramManager(programName, pm)
 
 	s.wg.Add(1)
 	go func(pm *program.ProgramManager) {
