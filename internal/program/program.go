@@ -180,9 +180,6 @@ func (pm *ProgramManager) GetRequest(processName string) (chan<- RequestReply, b
 }
 
 func (pm *ProgramManager) getProcessNames() []string {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
 	processes := pm.Processes()
 	names := make([]string, 0, len(processes))
 	for processName := range processes {
