@@ -17,9 +17,6 @@ programs:
         stopsignal: TERM
         stopsecs: 2
         user: jlefonde
-        env:
-            STARTED_BY: taskmaster
-            ANSWER: 42
         stderr_logfile: auto
     echo:
         cmd: echo "test"
@@ -28,7 +25,11 @@ programs:
         autorestart: never
     test:
         cmd: /home/jlefonde/Documents/test
-        stopsignal: USR1
+        umask: 007
+        workingdir: /tmp
+        stopsignal: USR2
         stopsecs: 2
         env:
-            TEST: "12345"
+            FILE_PATH: taskmasterd-test
+        stderr_logfile: NONE
+        stdout_logfile: ./test.log
